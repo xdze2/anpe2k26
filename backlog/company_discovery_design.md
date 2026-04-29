@@ -30,16 +30,28 @@ All user-generated data lives under one root (`anpe_data/`) so it can be backed 
 anpe_data/                  ← private git repo
   profile.md
   companies/
-    <siren>_<name_slug>.md  ← one file per company, SIREN is the stable key
+    <siren>_<name_slug>.md  ← one file per company, human-readable view + notes
   logs/
     log_<DATE_ISO>.md       ← chat transcripts, for debugging and analysis
   raw_data/
-    <siren>_<name_slug>/    ← future: raw web captures (HTML, PDFs...)
+    <siren>/                ← all collected data for this company (fetch + eval outputs)
+      enrichment.jsonl      ← append-only event log, single source of truth
+      sirene_<DATE>.json
+      sirene_eval_<DATE>.md
+      ddg_<DATE>.json
+      ddg_eval_<DATE>.md
+      website_<DATE>.html
+      website_eval_<DATE>.md
+      ...
   cache/
     sirene_searches/        ← gitignored inside anpe_data/ (ephemeral, regenerable)
       <city>_<radius>km_<naf_codes>.json
 
 ```
+
+The SIREN is the only stable key — `raw_data/<siren>/` uses SIREN alone (no slug).
+The slug in `companies/<siren>_<name_slug>.md` is decorative (human lookup only) and
+never parsed by the pipeline.
 
 `ANPE_DATA_DIR` in `.env` points to the `anpe_data/` folder (default: `./anpe_data`). This allows the user to place it outside the project directory.
 
@@ -68,20 +80,20 @@ Status lives in frontmatter — flat folder, no moving files. Browsable by categ
 
 ### Body
 
+The body is a **human-readable view** — generated from the latest eval outputs in
+`raw_data/<siren>/`, plus freeform user notes. It is not an input to the enrichment
+pipeline; the pipeline reads from `raw_data/` directly.
+
 ```markdown
 # Acme Viti-Tech
 
+<!-- generated from sirene_eval + website_eval, last updated 2026-04-29 -->
 **Adresse:** 12 rue des Vignes, 33000 Bordeaux
 **Taille:** 10-19 salariés
-
-## Web
-- Site: acme-vitilab.fr
+**Site:** acme-vitilab.fr
 
 ## Notes
-Agent / user notes here.
-
-## Historique
-- 2026-04-29 : découverte via SIRENE
+User / agent notes here (freeform, never overwritten by the pipeline).
 ```
 
 ---
@@ -94,7 +106,7 @@ Internal flow:
 1. Geocode `city` → lat/lon (reuse `geocode_city()` from `geo_api.py`)
 2. Check cache: `cache/sirene_searches/<city>_<radius>km_<naf_codes>.json` where `naf_codes` is the sorted, hyphen-joined list of codes (e.g. `6201Z-6202A`). No TTL — SIRENE data is stable, cache is permanent until manually cleared.
 3. If cache miss: call `/near_point` with lat/lon + radius + NAF codes. Raise a clear error if `radius_km > 50` (API hard limit). Save full results to cache.
-4. Save discovered SIRENs to `anpe_data/companies/` (create file if not exists, never overwrite — SIRENE fields are considered frozen at discovery time; see [`known_issues/stale_sirene_data.md`](known_issues/stale_sirene_data.md))
+4. Save discovered SIRENs to `anpe_data/companies/` (create file if not exists, never overwrite human notes). Queue `sirene_fetch` in `enrichment.jsonl` — SIRENE data is collected as raw data, not embedded in the company file directly. See [`known_issues/stale_sirene_data.md`](known_issues/stale_sirene_data.md).
 5. Return a paginated summary to the LLM: first N results (name, SIREN, NAF, address). Not the full 200.
 
 The LLM never receives 200 companies at once. It gets a page of ~10, presents them, the user reacts, and can ask for more. Page number is passed as an explicit tool argument — the LLM tracks it in context (simplest approach).
@@ -105,12 +117,13 @@ The agent must propose NAF codes to the user and wait for confirmation before ca
 
 ## Enrichment (next step)
 
-Once a company is discovered via SIRENE, a separate `enrich_company(siren)` tool would:
-- Fetch the company website
-- Search LinkedIn / news
-- Save results to `raw_data/<siren>/` and update the company markdown
+Once a company is discovered, enrichment collects data layer by layer — starting from
+the SIREN seed — via `enrich_company(siren)`. Each layer is a fetch+eval pair:
+SIRENE → DDG → website → Tavily → ... Every output is a timestamped file logged in
+`enrichment.jsonl`. See [enrichment_design.md](enrichment_design.md) for the full design.
 
-**This is the hard blocker for the motivating example.** SIRENE alone cannot tell you *what a company actually does* — enrichment is what makes "AI + wine" queries possible. The enrichment POC should be done before building the full discovery pipeline, as it may change the design.
+**This is the hard blocker for the motivating example.** SIRENE alone cannot tell you
+*what a company actually does* — enrichment is what makes "AI + wine" queries possible.
 
 ---
 
