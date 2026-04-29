@@ -26,6 +26,9 @@ __pycache__/
 .coverage
 htmlcov/
 
+# user data (personal, not committed)
+user_data/
+
 # editors
 .vscode/
 .idea/
