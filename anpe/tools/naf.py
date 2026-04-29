@@ -11,9 +11,9 @@ from typing import TypedDict
 import yaml
 from pydantic_ai import Agent
 
-_DOCS = Path(__file__).parent.parent.parent / "docs" / "siren_infos"
-_NAF_CSV = _DOCS / "naf_codes.csv"
-_NAF_CATEGORIES_YAML = _DOCS / "naf_categories.yaml"
+_DATA = Path(__file__).parent.parent / "data"
+_NAF_CSV = _DATA / "naf_codes.csv"
+_NAF_CATEGORIES_YAML = _DATA / "naf_categories.yaml"
 
 
 class _NafEntry(TypedDict):
