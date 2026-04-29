@@ -1,0 +1,14 @@
+[project]
+name = "anpe2k26"
+version = "0.1.0"
+description = "Assistant Numérique Pour l'Emploi — agent IA d'aide à la recherche d'emploi"
+readme = "README.md"
+requires-python = ">=3.12.3"
+dependencies = [
+    "httpx>=0.28.1",
+    "openai>=2.33.0",
+    "pydantic-ai>=1.88.0",
+]
+
+[tool.uv]
+env-file = ".env"
