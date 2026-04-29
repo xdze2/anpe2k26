@@ -88,9 +88,9 @@ One tool: `search_companies(city, radius_km, naf_codes, page)`.
 
 Internal flow:
 1. Geocode `city` → lat/lon (reuse `geocode_city()` from `geo_api.py`)
-2. Check cache: `cache/sirene_searches/<city>_<radius>km_<naf_codes>.json` with a `fetched_at` timestamp. TTL: 7 days.
-3. If cache miss: call `/near_point` with lat/lon + radius + NAF codes. Save full results to cache.
-4. Save discovered SIRENs to `anpe_data/companies/` (create file if not exists, never overwrite).
+2. Check cache: `cache/sirene_searches/<city>_<radius>km_<naf_codes>.json` where `naf_codes` is the sorted, hyphen-joined list of codes (e.g. `6201Z-6202A`). No TTL — SIRENE data is stable, cache is permanent until manually cleared.
+3. If cache miss: call `/near_point` with lat/lon + radius + NAF codes. Raise a clear error if `radius_km > 50` (API hard limit). Save full results to cache.
+4. Save discovered SIRENs to `anpe_data/companies/` (create file if not exists, never overwrite — SIRENE fields are considered frozen at discovery time; see `known_issues/`)
 5. Return a paginated summary to the LLM: first N results (name, SIREN, NAF, address). Not the full 200.
 
 The LLM never receives 200 companies at once. It gets a page of ~10, presents them, the user reacts, and can ask for more.
@@ -110,6 +110,7 @@ This is not yet implemented. SIRENE alone cannot tell you *what a company actual
 
 ## Open questions / future work
 
+- **`logs/` implementation (standalone, do first):** chat transcripts saved to `logs/log_<DATE_ISO>.md` after each session — for debugging and analysis
 - `enrich_company` tool: website fetch + summarise → update company file
 - Scanning flow: agent works through a list of `to_look_at` companies, presents each, asks for user rating
 - Index/search across company files by frontmatter fields (status, NAF, date)
