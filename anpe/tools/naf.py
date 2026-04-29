@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import csv
+import re
 from functools import lru_cache
 from pathlib import Path
 from typing import TypedDict
@@ -42,8 +43,13 @@ def _load_csv_index() -> dict[str, str]:
 @lru_cache(maxsize=1)
 def _load_categories() -> dict[str, _NafCategory]:
     with open(_NAF_CATEGORIES_YAML, encoding="utf-8") as f:
-        data: dict[str, _NafCategory] = yaml.safe_load(f)["categories"]
-        return data
+        raw = yaml.safe_load(f)
+    assert isinstance(raw, dict) and "categories" in raw, (
+        "naf_categories.yaml: missing 'categories' key"
+    )
+    categories = raw["categories"]
+    assert isinstance(categories, dict), "naf_categories.yaml: 'categories' must be a mapping"
+    return categories
 
 
 def register_naf_tools(agent: Agent) -> None:
@@ -58,9 +64,9 @@ def register_naf_tools(agent: Agent) -> None:
             code: NAF code to look up, e.g. '71.12B' or '6201Z'.
         """
         normalized = code.strip().upper().replace(" ", "")
-        # accept both '71.12B' and '7112B' formats
+        # insert dot after the two leading digits if absent (e.g. '7112B' → '71.12B')
         if "." not in normalized:
-            normalized = normalized[:2] + "." + normalized[2:]
+            normalized = re.sub(r"^(\d{2})(\d)", r"\1.\2", normalized)
         index = _load_csv_index()
         label = index.get(normalized)
         if not label:

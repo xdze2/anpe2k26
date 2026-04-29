@@ -9,7 +9,7 @@ from prompt_toolkit import PromptSession
 from prompt_toolkit.formatted_text import HTML
 from pydantic_ai import AgentStreamEvent, FunctionToolCallEvent, RunContext
 from rich.columns import Columns
-from rich.console import Console
+from rich.console import Console, Group
 from rich.live import Live
 from rich.spinner import Spinner
 from rich.text import Text
@@ -44,26 +44,25 @@ def _print_status(tokens_in: int, tokens_out: int) -> None:
 
 
 async def _run_agent(user_text: str) -> tuple[str, int, int]:
-    tool_lines: list[str] = []
+    tool_lines: list[Text] = []
+    spinner = Spinner("dots", style="yellow")
+
+    def _renderable() -> Group:
+        spinner_line = Columns([spinner, Text("  en attente…", style="dim")])
+        return Group(spinner_line, *tool_lines)
+
+    live = Live(_renderable(), console=console, transient=True, refresh_per_second=12)
 
     async def _handle_events(
         ctx: RunContext[None], events: AsyncIterable[AgentStreamEvent]
     ) -> None:
         async for event in events:
             if isinstance(event, FunctionToolCallEvent):
-                tool_lines.append(event.part.tool_name)
+                tool_lines.append(Text(f"   ⟳ {event.part.tool_name}", style="yellow"))
+                live.update(_renderable())
 
-    spinner = Spinner("dots", style="yellow")
-    status_text = Text("  en attente…", style="dim")
-
-    live = Live(
-        Columns([spinner, status_text]), console=console, transient=True, refresh_per_second=12
-    )
     with live:
         result = await agent.run(user_text, event_stream_handler=_handle_events)
-
-    for tool_name in tool_lines:
-        console.print(f"   [yellow]⟳ {tool_name}[/yellow]")
 
     usage = result.usage()
     return result.output, usage.input_tokens or 0, usage.output_tokens or 0
