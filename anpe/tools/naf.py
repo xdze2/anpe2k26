@@ -6,24 +6,11 @@ import csv
 import re
 from functools import lru_cache
 from pathlib import Path
-from typing import TypedDict
 
-import yaml
 from pydantic_ai import Agent
 
 _DATA = Path(__file__).parent.parent / "data"
 _NAF_CSV = _DATA / "naf_codes.csv"
-_NAF_CATEGORIES_YAML = _DATA / "naf_categories.yaml"
-
-
-class _NafEntry(TypedDict):
-    code: str
-    label: str
-
-
-class _NafCategory(TypedDict):
-    description: str
-    codes: list[_NafEntry]
 
 
 @lru_cache(maxsize=1)
@@ -40,22 +27,10 @@ def _load_csv_index() -> dict[str, str]:
     return index
 
 
-@lru_cache(maxsize=1)
-def _load_categories() -> dict[str, _NafCategory]:
-    with open(_NAF_CATEGORIES_YAML, encoding="utf-8") as f:
-        raw = yaml.safe_load(f)
-    assert isinstance(raw, dict) and "categories" in raw, (
-        "naf_categories.yaml: missing 'categories' key"
-    )
-    categories = raw["categories"]
-    assert isinstance(categories, dict), "naf_categories.yaml: 'categories' must be a mapping"
-    return categories
-
-
 def register_naf_tools(agent: Agent) -> None:
     @agent.tool_plain
     def naf_lookup(code: str) -> str:
-        """Return the label and category for a known NAF code.
+        """Return the label for a known NAF code.
 
         Use this when the user mentions a specific NAF code and wants to know
         what activity it corresponds to.
@@ -64,24 +39,13 @@ def register_naf_tools(agent: Agent) -> None:
             code: NAF code to look up, e.g. '71.12B' or '6201Z'.
         """
         normalized = code.strip().upper().replace(" ", "")
-        # insert dot after the two leading digits if absent (e.g. '7112B' → '71.12B')
         if "." not in normalized:
             normalized = re.sub(r"^(\d{2})(\d)", r"\1.\2", normalized)
         index = _load_csv_index()
         label = index.get(normalized)
         if not label:
             return f"Code NAF '{code}' introuvable."
-
-        categories = _load_categories()
-        for cat_name, cat in categories.items():
-            for entry in cat["codes"]:
-                if entry["code"].replace(".", "").upper() == normalized.replace(".", "").upper():
-                    return (
-                        f"Code {code} — {label}\n"
-                        f"Catégorie : {cat_name} ({cat['description']})"
-                    )
-
-        return f"Code {code} — {label}"
+        return f"Code {normalized} — {label}"
 
     @agent.tool_plain
     def naf_search(keywords: str) -> str:
@@ -89,40 +53,28 @@ def register_naf_tools(agent: Agent) -> None:
 
         Use this when the user describes a type of company, job domain, or
         sector and wants to know which NAF codes correspond to it.
-        Returns matching categories with their codes and labels so you can
-        identify the most relevant ones.
 
         Args:
             keywords: Free-text description of the activity or sector,
                       e.g. 'engineering and AI' or 'data processing startup'.
         """
-        categories = _load_categories()
-        kw_lower = keywords.lower()
+        index = _load_csv_index()
+        words = [w for w in keywords.lower().split() if len(w) > 2]
 
-        # Score each category by keyword overlap
-        scored: list[tuple[int, str, _NafCategory]] = []
-        for cat_name, cat in categories.items():
-            score = 0
-            searchable = (cat_name + " " + cat["description"]).lower()
-            for word in kw_lower.split():
-                if len(word) > 2 and word in searchable:
-                    score += 2
-            for entry in cat["codes"]:
-                for word in kw_lower.split():
-                    if len(word) > 2 and word in entry["label"].lower():
-                        score += 1
-            scored.append((score, cat_name, cat))
+        scored: list[tuple[int, str, str]] = []
+        for code, label in index.items():
+            label_lower = label.lower()
+            score = sum(1 for w in words if w in label_lower)
+            if score > 0:
+                scored.append((score, code, label))
 
         scored.sort(key=lambda x: -x[0])
+        top = scored[:10]
 
-        # Return top matches (at least the best one, up to 3 non-zero)
-        top = [x for x in scored if x[0] > 0][:3] or [scored[0]]
+        if not top:
+            return f"Aucun code NAF trouvé pour « {keywords} »."
 
-        lines = [f"Catégories NAF correspondant à « {keywords} » :\n"]
-        for _, cat_name, cat in top:
-            lines.append(f"## {cat_name} — {cat['description']}")
-            for entry in cat["codes"]:
-                lines.append(f"  {entry['code']}  {entry['label']}")
-            lines.append("")
-
+        lines = [f"Codes NAF correspondant à « {keywords} » :"]
+        for _, code, label in top:
+            lines.append(f"  {code}  {label}")
         return "\n".join(lines)

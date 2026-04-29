@@ -2,25 +2,13 @@ import pytest
 from pydantic_ai.models.test import TestModel
 
 from anpe.agent import agent
-from anpe.tools.naf import _load_categories, _load_csv_index
+from anpe.tools.naf import _load_csv_index
 
 
 def test_csv_index_loads():
     index = _load_csv_index()
     assert "71.12B" in index
     assert "Ingénierie" in index["71.12B"]
-
-
-def test_categories_load():
-    cats = _load_categories()
-    assert "engineering" in cats
-    assert "core-tech" in cats
-
-
-def test_naf_lookup_known_code():
-    index = _load_csv_index()
-    # engineering code from categories
-    assert "71.12B" in index
 
 
 def test_naf_lookup_unknown_code():
@@ -42,18 +30,14 @@ async def test_naf_search_tool_called():
     assert result.output is not None
 
 
-def test_naf_search_scores_engineering():
-    from anpe.tools.naf import _load_categories
+def test_naf_search_returns_matches():
+    from anpe.tools.naf import _load_csv_index
 
-    categories = _load_categories()
-    kw_lower = "engineering"
-    scored = []
-    for cat_name, cat in categories.items():
-        score = 0
-        searchable = (cat_name + " " + cat["description"]).lower()
-        for word in kw_lower.split():
-            if len(word) > 2 and word in searchable:
-                score += 2
-        scored.append((score, cat_name))
-    scored.sort(key=lambda x: -x[0])
-    assert scored[0][1] == "engineering"
+    index = _load_csv_index()
+    words = ["ingénierie"]
+    scored = [
+        (sum(1 for w in words if w in label.lower()), code, label)
+        for code, label in index.items()
+    ]
+    scored = [(s, c, l) for s, c, l in scored if s > 0]
+    assert any("71.12B" == code for _, code, _ in scored)
