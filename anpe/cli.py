@@ -1,6 +1,7 @@
 import asyncio
 
 import click
+from pydantic_ai.exceptions import ModelHTTPError
 
 from anpe.agent import agent
 
@@ -22,5 +23,12 @@ async def _chat_loop() -> None:
         if not user_input:
             continue
 
-        result = await agent.run(user_input)
-        click.echo(f"ANPE: {result.output}\n")
+        try:
+            result = await agent.run(user_input)
+            click.echo(f"ANPE: {result.output}\n")
+        except ModelHTTPError as e:
+            if e.status_code == 429:
+                raw = (e.body or {}).get("metadata", {}).get("raw", "")
+                msg = raw or "Trop de requêtes, réessayez dans quelques instants."
+                raise click.ClickException(f"Erreur 429: {msg}") from e
+            raise click.ClickException(f"Erreur API {e.status_code}: {e}") from e
