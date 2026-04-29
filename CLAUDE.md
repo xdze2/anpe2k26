@@ -2,6 +2,16 @@
 
 This file provides guidance to Claude Code (claude.ai/code) when working with code in this repository.
 
+## Starting a session
+
+Read the most recent dev log entry before doing anything else:
+
+```bash
+ls backlog/dev_log/   # find the latest entry
+```
+
+It captures context, decisions, and next steps that aren't in git history.
+
 ## Commands
 
 ```bash
