@@ -3,6 +3,7 @@ from pydantic_ai.models.openai import OpenAIChatModel
 from pydantic_ai.providers.openai import OpenAIProvider
 
 from anpe.config import settings
+from anpe.tools.naf import register_naf_tools
 
 _model = OpenAIChatModel(
     settings.openrouter_model,
@@ -21,3 +22,5 @@ agent = Agent(
         "Réponds en français sauf si l'utilisateur s'adresse à toi dans une autre langue."
     ),
 )
+
+register_naf_tools(agent)
