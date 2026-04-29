@@ -1,5 +1,32 @@
-.venv/
+# env
 .env
+.env.*
+!.env.example
+
+# uv / venv
+.venv/
+.python-version
+
+# build
+dist/
+*.egg-info/
+
+# python
 __pycache__/
 *.pyc
-.python-version
+*.pyo
+*.pyd
+
+# type checking
+.mypy_cache/
+.pyright/
+
+# testing / coverage
+.pytest_cache/
+.coverage
+htmlcov/
+
+# editors
+.vscode/
+.idea/
+*.swp
