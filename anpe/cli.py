@@ -1,42 +1,101 @@
+"""ANPE interactive chat — rich + asyncio."""
+
+from __future__ import annotations
+
 import asyncio
 from collections.abc import AsyncIterable
 
-import click
+from prompt_toolkit import PromptSession
+from prompt_toolkit.formatted_text import HTML
 from pydantic_ai import AgentStreamEvent, FunctionToolCallEvent, RunContext
-from pydantic_ai.exceptions import ModelHTTPError
+from rich.columns import Columns
+from rich.console import Console
+from rich.live import Live
+from rich.spinner import Spinner
+from rich.text import Text
 
 from anpe.agent import agent
+from anpe.config import settings
+
+console = Console()
+
+_QUIT_WORDS = {"quit", "exit", "q", "quitter", "au revoir", "bye"}
 
 
-@click.command()
-def chat() -> None:
-    """Start an interactive chat session with ANPE."""
-    asyncio.run(_chat_loop())
+def _print_header() -> None:
+    console.print()
+    console.print(" [bold cyan]ANPE[/] — Assistant Numérique Pour l'Emploi")
+    console.print(" [dim]tapez 'quitter' pour quitter[/]")
+    console.print()
 
 
-async def _log_tool_calls(ctx: RunContext[None], events: AsyncIterable[AgentStreamEvent]) -> None:
-    async for event in events:
-        if isinstance(event, FunctionToolCallEvent):
-            click.echo(click.style(f"  [outil] {event.part.tool_name}", fg="yellow"))
+def _print_assistant(text: str) -> None:
+    console.print(f" [bold cyan]ANPE[/]  {text}")
+    console.print()
+
+
+def _print_status(tokens_in: int, tokens_out: int) -> None:
+    parts = Text()
+    parts.append(f" {tokens_in} → {tokens_out} tokens", style="dim")
+    parts.append("   ", style="dim")
+    parts.append(settings.openrouter_model, style="dim")
+    console.print(parts)
+    console.print()
+
+
+async def _run_agent(user_text: str) -> tuple[str, int, int]:
+    tool_lines: list[str] = []
+
+    async def _handle_events(
+        ctx: RunContext[None], events: AsyncIterable[AgentStreamEvent]
+    ) -> None:
+        async for event in events:
+            if isinstance(event, FunctionToolCallEvent):
+                tool_lines.append(event.part.tool_name)
+
+    spinner = Spinner("dots", style="yellow")
+    status_text = Text("  en attente…", style="dim")
+
+    live = Live(
+        Columns([spinner, status_text]), console=console, transient=True, refresh_per_second=12
+    )
+    with live:
+        result = await agent.run(user_text, event_stream_handler=_handle_events)
+
+    for tool_name in tool_lines:
+        console.print(f"   [yellow]⟳ {tool_name}[/yellow]")
+
+    usage = result.usage()
+    return result.output, usage.input_tokens or 0, usage.output_tokens or 0
 
 
 async def _chat_loop() -> None:
-    click.echo("ANPE — Assistant Numérique Pour l'Emploi")
-    click.echo("Tapez 'quit' pour quitter.\n")
+    _print_header()
+    _print_assistant("Bonjour ! Comment puis-je vous aider ?")
+
+    session: PromptSession[str] = PromptSession()
+    prompt = HTML("<ansigreen><b> ❯</b></ansigreen> ")
 
     while True:
-        user_input = click.prompt("Vous", prompt_suffix=": ").strip()
-        if user_input.lower() in {"quit", "exit", "q"}:
+        try:
+            user_input = (await session.prompt_async(prompt)).strip()
+        except (EOFError, KeyboardInterrupt):
             break
+
         if not user_input:
             continue
+        if user_input.lower() in _QUIT_WORDS:
+            break
 
+        console.print()
         try:
-            result = await agent.run(user_input, event_stream_handler=_log_tool_calls)
-            click.echo(f"ANPE: {result.output}\n")
-        except ModelHTTPError as e:
-            if e.status_code == 429:
-                raw = (e.body or {}).get("metadata", {}).get("raw", "")
-                msg = raw or "Trop de requêtes, réessayez dans quelques instants."
-                raise click.ClickException(f"Erreur 429: {msg}") from e
-            raise click.ClickException(f"Erreur API {e.status_code}: {e}") from e
+            output, tokens_in, tokens_out = await _run_agent(user_input)
+            _print_assistant(output)
+            _print_status(tokens_in, tokens_out)
+        except Exception as e:
+            console.print(f" [bold red]Erreur[/] {e}")
+            console.print()
+
+
+def run() -> None:
+    asyncio.run(_chat_loop())

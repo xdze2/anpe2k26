@@ -10,15 +10,13 @@ dependencies = [
     "pydantic-ai>=1.88.0",
     "pydantic-settings>=2.14.0",
     "pyyaml>=6.0.3",
-    "textual>=8.2.4",
 ]
 
 [tool.uv]
 package = true
 
 [project.scripts]
-anpe = "anpe.cli:chat"
-anpe-tui = "anpe.tui:run"
+anpe = "anpe.cli:run"
 
 [dependency-groups]
 dev = [
