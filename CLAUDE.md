@@ -4,10 +4,10 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Starting a session
 
-Read the most recent dev log entry before doing anything else:
+Read the 2 most recent dev log entries before doing anything else:
 
 ```bash
-ls docs/dev_log/   # find the latest entry
+ls docs/dev_log/ | tail -2   # find the latest entries
 ```
 
 It captures context, decisions, and next steps that aren't in git history.
