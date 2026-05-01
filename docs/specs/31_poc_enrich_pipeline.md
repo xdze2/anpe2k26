@@ -80,7 +80,7 @@ fetching next (e.g. a website URL found in DDG results, a LinkedIn page).
 ## CLI commands (POC)
 
 ```bash
-anpe add_target NODEID ddg KEYWORD   # append ("ddg", KEYWORD) to node's queue.jsonl
+anpe add_target NODEID ddg KEYWORD   # append a fetch target to the node
 anpe enrich NODEID                    # pop one item, fetch, llm_summarize, save
 ```
 
@@ -89,17 +89,20 @@ anpe enrich NODEID                    # pop one item, fetch, llm_summarize, save
 
 ## Storage
 
-Three artifact types per node:
+Node directory layout:
 
-- `summary.md` — current summary, overwritten on each update
-- `queue.jsonl` — append-only event log (see below)
-- `raw_<tool>_<slug>_<ts>.txt` — raw fetch output, one file per completed fetch
+```
+user_data/nodes/<node_id>/
+  fetch.jsonl       — fetch log / cache (append-only, events: put | done | error)
+  summarize.jsonl   — summarize log (append-only, one entry per LLM call)
+  summary.md        — current summary, overwritten on each update
+  raw_data/         — raw fetch output, one file per completed fetch
+```
 
-No `enrichment.jsonl` for now. Logging goes to stdout.
+### fetch.jsonl — fetch log / cache
 
-### queue.jsonl event log
-
-Each line is one event. State is reconstructed by replaying events — the file is never rewritten.
+Each line is one event; state reconstructed by replay, file never rewritten.
+A target is pending if it has a `put` with no matching `done` or `error`.
 
 ```jsonl
 {"event": "put",   "uid": "a3f1", "tool": "ddg", "target": "Hugging Face", "ts": "..."}
@@ -107,7 +110,18 @@ Each line is one event. State is reconstructed by replaying events — the file 
 {"event": "error", "uid": "a3f1", "detail": "DDG returned no results", "ts": "..."}
 ```
 
-`uid` is a short random hex (8 chars). A target is pending if it has a `put` with no matching `done` or `error`. The `raw_file` field on `done` links the event to the fetch artifact on disk.
+`uid` is short random hex. The `raw_file` pointer on `done` links the event to its artifact.
+`fetch.jsonl` acts as a **cache**: if a target is already `done`, the fetch can be skipped
+and summarization re-run on the existing raw file (e.g. after a prompt change).
+
+### summarize.jsonl — summarize log
+
+One entry per LLM call. Records model, status, output, and which fetch it consumed.
+
+```jsonl
+{"ts": "...", "fetch_uid": "a3f1", "model": "openai/gpt-4o-mini", "status": "ok",
+ "summary": "...", "new_targets": [{"tool": "fetch", "target": "https://..."}]}
+```
 
 ## What we want to learn
 
@@ -129,6 +143,11 @@ event that produced them. State is reconstructed by replaying events forward.
 **`uid` is random hex, not a hash of tool+target.** A hash looks deterministic but
 adds no value (you never look up by it), and breaks if the same target is queued
 twice intentionally.
+
+**fetch.jsonl as a cache, summarize.jsonl as a separate log.** Separating fetch and
+summarize logs allows re-running the LLM on already-fetched data (e.g. after a prompt
+change) without hitting the network again. The `fetch_uid` field in `summarize.jsonl`
+links each LLM call back to the fetch that produced the input data.
 
 ## Explicitly deferred
 

@@ -4,9 +4,10 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 
+from anpe.config import settings
 from anpe.enrich.registry import FETCH_TOOLS
 from anpe.enrich.summarize import llm_summarize
-from anpe.node_dir import NodeDir, QueueEntry
+from anpe.node_dir import FetchEntry, NodeDir
 
 
 @dataclass
@@ -45,13 +46,21 @@ async def enrich_step(node_id: str) -> StepLog:
     result = await llm_summarize(raw_data, previous_summary)
     print(f"[{node_id}] llm    status={result.status!r}  new_targets={len(result.new_targets)}")
 
+    new_targets = [(t.tool, t.target) for t in result.new_targets]
+    node.append_summarize_event(
+        fetch_uid=entry.uid,
+        model=settings.openrouter_model,
+        status=result.status,
+        summary=result.summary,
+        new_targets=new_targets,
+    )
+
     if result.status == "not_relevant":
         return StepLog(node_id=node_id, tool=entry.tool, target=entry.target,
                        status="not_relevant", new_targets=[])
 
     node.save_summary(result.summary)
 
-    new_targets = [(t.tool, t.target) for t in result.new_targets]
     for tool, target in new_targets:
         if tool in FETCH_TOOLS:
             node.append_target(tool, target)
@@ -60,7 +69,7 @@ async def enrich_step(node_id: str) -> StepLog:
                    status=result.status, new_targets=new_targets)
 
 
-def _fetch(entry: QueueEntry) -> tuple[str, None] | tuple[None, str]:
+def _fetch(entry: FetchEntry) -> tuple[str, None] | tuple[None, str]:
     fetch_fn = FETCH_TOOLS.get(entry.tool)
     if fetch_fn is None:
         return None, f"unknown tool: {entry.tool!r}"
