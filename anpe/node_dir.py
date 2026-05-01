@@ -1,10 +1,10 @@
 """Disk interface for a single enrichment node.
 
 A node lives at USER_DATA_DIR/nodes/<node_id>/ and contains:
-  fetch.jsonl        — append-only fetch log / cache; events: put | done | error
-  summarize.jsonl    — append-only summarize log; one entry per LLM call
-  summary.md         — current summary, overwritten on each update
-  raw_data/<file>    — raw fetch output, one file per completed fetch
+  fetch.jsonl           — append-only state machine log; events: put | fetch_done | summarize_done | …
+  summarize/<file>.json — one result file per process run, linked from fetch.jsonl
+  summary.md            — current summary, overwritten on each update
+  raw_data/<file>       — raw fetch output, one file per completed fetch
 """
 
 from __future__ import annotations
@@ -39,9 +39,9 @@ class NodeDir:
         self.node_id = node_id
         self.path = NODES_DIR / node_id
         self._fetch_file = self.path / "fetch.jsonl"
-        self._summarize_file = self.path / "summarize.jsonl"
         self._summary_file = self.path / "summary.md"
         self._raw_dir = self.path / "raw_data"
+        self._summarize_dir = self.path / "summarize"
 
     def exists(self) -> bool:
         return self.path.exists()
@@ -49,6 +49,7 @@ class NodeDir:
     def init(self) -> None:
         self.path.mkdir(parents=True, exist_ok=True)
         self._raw_dir.mkdir(exist_ok=True)
+        self._summarize_dir.mkdir(exist_ok=True)
 
     # ------------------------------------------------------------------
     # Fetch log
@@ -133,10 +134,10 @@ class NodeDir:
             {"event": "fetch_error", "uid": entry.uid, "detail": detail, "ts": _now()}
         )
 
-    def mark_summarize_done(self, entry: FetchEntry, model: str, status: str) -> None:
+    def mark_summarize_done(self, entry: FetchEntry, model: str, status: str, result_file: str) -> None:
         self._append_fetch_event(
             {"event": "summarize_done", "uid": entry.uid,
-             "model": model, "status": status, "ts": _now()}
+             "model": model, "status": status, "result_file": result_file, "ts": _now()}
         )
 
     def mark_summarize_error(self, entry: FetchEntry, detail: str) -> None:
@@ -171,27 +172,38 @@ class NodeDir:
         return filename
 
     # ------------------------------------------------------------------
-    # Summarize log
+    # Summarize results
     # ------------------------------------------------------------------
 
-    def append_summarize_event(
+    def prompt_file_path(self, entry: FetchEntry, ts: str) -> Path:
+        """Return the path for a prompt debug file (not yet written)."""
+        slug = entry.target[:40].replace("/", "_").replace(" ", "_")
+        return self._summarize_dir / f"prompt_{entry.tool}_{slug}_{ts}.txt"
+
+    def save_summarize_result(
         self,
-        fetch_uid: str,
+        entry: FetchEntry,
         model: str,
         status: str,
         summary: str,
         new_targets: list[tuple[str, str]],
-    ) -> None:
-        event = {
+    ) -> str:
+        """Write one summarize result file. Returns the filename."""
+        if not self._summarize_dir.exists():
+            self.init()
+        ts = datetime.now(timezone.utc).strftime("%Y%m%dT%H%M%S")
+        slug = entry.target[:40].replace("/", "_").replace(" ", "_")
+        filename = f"sum_{entry.tool}_{slug}_{status}_{ts}.json"
+        data = {
             "ts": _now(),
-            "fetch_uid": fetch_uid,
+            "fetch_uid": entry.uid,
             "model": model,
             "status": status,
             "summary": summary,
             "new_targets": [{"tool": t, "target": u} for t, u in new_targets],
         }
-        with self._summarize_file.open("a", encoding="utf-8") as f:
-            f.write(json.dumps(event) + "\n")
+        (self._summarize_dir / filename).write_text(json.dumps(data, indent=2, ensure_ascii=False), encoding="utf-8")
+        return filename
 
     # ------------------------------------------------------------------
     # Summary

@@ -15,10 +15,11 @@ class FetchTool:
     fetch: Callable[[str], str]
     process: Callable[[str, str], Awaitable[EnrichResult]]
     raw_ext: str = "txt"
+    capture_prompt: bool = False
 
 
 FETCH_TOOLS: dict[str, FetchTool] = {
-    "ddg": FetchTool(fetch=ddg_search, process=llm_summarize),
+    "ddg": FetchTool(fetch=ddg_search, process=llm_summarize, capture_prompt=True),
     "siren": FetchTool(fetch=siren_fetch, process=siren_process, raw_ext="json"),
     # "fetch": FetchTool(fetch=http_fetch, process=llm_summarize),  # deferred
     # "tavily": FetchTool(fetch=tavily_fetch, process=llm_summarize),  # deferred

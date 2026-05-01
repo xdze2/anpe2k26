@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import asyncio
+from pathlib import Path
 
 from pydantic import BaseModel
 from pydantic_ai import Agent
@@ -68,11 +69,16 @@ _agent: Agent[None, EnrichResult] = Agent(
 )
 
 
-async def llm_summarize(raw_data: str, previous_summary: str) -> EnrichResult:
+async def llm_summarize(
+    raw_data: str, previous_summary: str, prompt_file: Path | None = None
+) -> EnrichResult:
     prompt = ""
     if previous_summary:
         prompt += f"## Previous summary\n\n{previous_summary}\n\n"
     prompt += f"## New data\n\n{raw_data}"
+
+    if prompt_file is not None:
+        prompt_file.write_text(prompt, encoding="utf-8")
 
     last_error: Exception | None = None
     for attempt in range(MAX_RETRIES):

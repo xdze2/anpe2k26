@@ -88,7 +88,7 @@ anpe summarize NODEID [FETCH_UID]     # re-run summarize on existing fetch data,
 `enrich` runs **one step** so output can be inspected between cycles.
 `add_target` takes the tool slug explicitly — it must exist in `FETCH_TOOLS`.
 `summarize` is for prompt tuning — it reads the raw file already on disk and calls
-`llm_summarize` again, appending a new entry to `summarize.jsonl`. No network call.
+`llm_summarize` again, writing a new result file under `summarize/`. No network call.
 
 ## Storage
 
@@ -96,13 +96,15 @@ Node directory layout:
 
 ```
 user_data/nodes/<node_id>/
-  fetch.jsonl       — fetch log / cache (append-only, events: put | done | error)
-  summarize.jsonl   — summarize log (append-only, one entry per LLM call)
-  summary.md        — current summary, overwritten on each update
-  raw_data/         — raw fetch output, one file per completed fetch
+  fetch.jsonl          — state machine log (append-only, events: put | fetch_done | summarize_done | …)
+  summary.md           — current summary, overwritten on each update
+  raw_data/            — raw fetch output, one file per completed fetch
+  summarize/           — one result file per process run, linked from fetch.jsonl
+    sum_<tool>_<target>_<status>_<ts>.json
+    prompt_<tool>_<target>_<ts>.txt   — LLM prompt captured for debugging (temporary)
 ```
 
-### fetch.jsonl — fetch + summarize lifecycle log
+### fetch.jsonl — state machine log
 
 Each line is one event; state reconstructed by replay, file never rewritten.
 The unit of work is one full `fetch → summarize` cycle per target.
@@ -119,7 +121,7 @@ put → fetch_done → summarize_done   (happy path)
 {"event": "put",             "uid": "a3f1", "tool": "ddg", "target": "Hugging Face", "ts": "..."}
 {"event": "fetch_done",      "uid": "a3f1", "raw_file": "raw_ddg_Hugging_Face_20260501T162300.txt", "ts": "..."}
 {"event": "fetch_error",     "uid": "a3f1", "detail": "DDG returned no results", "ts": "..."}
-{"event": "summarize_done",  "uid": "a3f1", "model": "openai/gpt-4o-mini", "status": "ok", "ts": "..."}
+{"event": "summarize_done",  "uid": "a3f1", "model": "openai/gpt-4o-mini", "status": "ok", "result_file": "sum_ddg_Hugging_Face_ok_20260501T162301.json", "ts": "..."}
 {"event": "summarize_error", "uid": "a3f1", "detail": "429 rate limit", "ts": "..."}
 ```
 
@@ -129,14 +131,25 @@ based on state: fetches if `put`, summarizes directly if `fetch_done` / `summari
 `summarize_error` is the key case: fetch data is already on disk, so `enrich` (or
 `anpe summarize`) can retry the LLM step without hitting the network.
 
-### summarize.jsonl — summarize log
+### summarize/ — per-run result files
 
-One entry per LLM call. Records model, status, output, and which fetch it consumed.
+One JSON file per process run. Named `sum_<tool>_<target>_<status>_<ts>.json` —
+readable by browsing the directory, and linked from the `summarize_done` event in
+`fetch.jsonl` via `result_file`.
 
-```jsonl
-{"ts": "...", "fetch_uid": "a3f1", "model": "openai/gpt-4o-mini", "status": "ok",
- "summary": "...", "new_targets": [{"tool": "fetch", "target": "https://..."}]}
+```json
+{
+  "ts": "...",
+  "fetch_uid": "a3f1",
+  "model": "openai/gpt-4o-mini",
+  "status": "ok",
+  "summary": "...",
+  "new_targets": [{"tool": "fetch", "target": "https://..."}]
+}
 ```
+
+For LLM-backed tools, a companion `prompt_<tool>_<target>_<ts>.txt` is written
+alongside with the exact prompt sent — useful for prompt tuning, to be removed later.
 
 ## What we want to learn
 
@@ -159,12 +172,14 @@ event that produced them. State is reconstructed by replaying events forward.
 adds no value (you never look up by it), and breaks if the same target is queued
 twice intentionally.
 
-**fetch.jsonl as lifecycle log, summarize.jsonl as output log.** `fetch.jsonl` tracks
-the state of each target (`put` → `fetch_done` → `summarize_done/error`). `summarize.jsonl`
-records every LLM call with full output — including retries and `anpe summarize` runs.
-The `fetch_uid` field links each summarize entry back to the fetch that produced its input.
-This separation allows re-running the LLM on already-fetched data without hitting the
-network again (e.g. after a prompt change).
+**`fetch.jsonl` as state machine, `summarize/` as result files.** `fetch.jsonl` is kept
+light: it only tracks lifecycle events (`put` → `fetch_done` → `summarize_done/error`).
+Full LLM output lives in one JSON file per run under `summarize/`, named
+`sum_<tool>_<target>_<status>_<ts>.json` and linked from `fetch.jsonl` via `result_file`
+(mirroring how `raw_file` links raw fetch artifacts). Browsing `summarize/` gives a
+human-readable history without parsing the event log. Re-running `anpe summarize` after
+a prompt change produces a new file each time — history is preserved, `fetch.jsonl`
+always points to the latest.
 
 **`summarize_error` enables clean retry without fake events.** When the LLM call fails
 (quota, rate limit), the target stays in `fetch_done` state and `enrich` retries the
@@ -180,7 +195,7 @@ company website or a more specific DDG query.
 
 ### What to do
 
-1. Test on 3-4 real companies, collect `summarize.jsonl` output for each.
+1. Test on 3-4 real companies, inspect `summarize/` result files for each.
 2. For each case where `new_targets` is empty: look at the raw DDG data — were there
    obvious URLs or names to follow up on? If yes, the prompt is failing to extract them.
 3. Iterate on the system prompt in `anpe/enrich/summarize.py`. Use `anpe summarize NODEID`

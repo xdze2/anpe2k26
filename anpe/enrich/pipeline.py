@@ -3,10 +3,12 @@
 from __future__ import annotations
 
 from dataclasses import dataclass, field
+from datetime import datetime, timezone
 
 from anpe.config import settings
 from anpe.enrich.errors import FetchBlockedError, FetchNotFoundError, FetchRetryableError
 from anpe.enrich.registry import FETCH_TOOLS
+from anpe.enrich.summarize import llm_summarize
 from anpe.node_dir import FetchEntry, NodeDir
 
 
@@ -59,7 +61,7 @@ async def summarize_step(node_id: str, fetch_uid: str | None = None) -> StepLog:
     """Re-run process on an already-fetched target, bypassing the queue.
 
     If fetch_uid is None, uses the most recent fetch_done event.
-    Intended for prompt tuning — appends a new summarize.jsonl entry each time.
+    Intended for prompt tuning — writes a new summarize result file each time.
     """
     node = NodeDir(node_id)
 
@@ -95,7 +97,12 @@ async def _run_process(node: NodeDir, entry: FetchEntry, raw_data: str) -> StepL
     print(f"[{node.node_id}] process  [{entry.tool}]  (previous: {len(previous_summary)} chars)")
 
     try:
-        result = await tool.process(raw_data, previous_summary)
+        if tool.capture_prompt:
+            ts = datetime.now(timezone.utc).strftime("%Y%m%dT%H%M%S")
+            prompt_file = node.prompt_file_path(entry, ts)
+            result = await llm_summarize(raw_data, previous_summary, prompt_file=prompt_file)
+        else:
+            result = await tool.process(raw_data, previous_summary)
     except Exception as e:
         detail = str(e)
         print(f"[{node.node_id}] process  ERROR: {detail}")
@@ -107,14 +114,14 @@ async def _run_process(node: NodeDir, entry: FetchEntry, raw_data: str) -> StepL
           f"  new_targets={len(result.new_targets)}")
 
     new_targets = [(t.tool, t.target) for t in result.new_targets]
-    node.append_summarize_event(
-        fetch_uid=entry.uid,
+    result_file = node.save_summarize_result(
+        entry=entry,
         model=settings.openrouter_model,
         status=result.status,
         summary=result.summary,
         new_targets=new_targets,
     )
-    node.mark_summarize_done(entry, model=settings.openrouter_model, status=result.status)
+    node.mark_summarize_done(entry, model=settings.openrouter_model, status=result.status, result_file=result_file)
 
     if result.status == "not_relevant":
         return StepLog(node_id=node.node_id, tool=entry.tool, target=entry.target,
