@@ -25,10 +25,14 @@ Rules:
   DDG query in new_targets so the pipeline can retry.
 - status "no_data": fetch returned nothing actionable, continue if queue has more.
 - new_targets: list of (tool, target) pairs worth fetching next.
-  Only propose targets you actually found in the data (URLs, names), or refined search
-  queries when retrying an ambiguous result.
-  Use tool "ddg" for search queries, "fetch" for direct URLs.
-  Keep the list short (0-3 items). Empty list is fine.
+  DDG results are snippets only — always propose the most relevant URLs as "fetch"
+  targets so the pipeline can retrieve the full content. Priority order:
+    1. Company's official website
+    2. Wikipedia page (if one exists for the company)
+    3. LinkedIn company page
+    4. Business news article (e.g. Les Echos, Maddyness, Tech.eu, BFM Business)
+  Propose all of them if found in the data (up to 4). Use tool "fetch" for URLs,
+  "ddg" for new search queries.
   If status is "no_data", new_targets must be empty.
 - summary: markdown, under 300 words, synthesize don't accumulate.
   Write in English.

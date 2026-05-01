@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import time
 from dataclasses import dataclass, field
 from datetime import datetime, timezone
 
@@ -97,12 +98,14 @@ async def _run_process(node: NodeDir, entry: FetchEntry, raw_data: str) -> StepL
     print(f"[{node.node_id}] process  [{entry.tool}]  (previous: {len(previous_summary)} chars)")
 
     try:
+        t0 = time.monotonic()
         if tool.capture_prompt:
             ts = datetime.now(timezone.utc).strftime("%Y%m%dT%H%M%S")
             prompt_file = node.prompt_file_path(entry, ts)
             result = await llm_summarize(raw_data, previous_summary, prompt_file=prompt_file)
         else:
             result = await tool.process(raw_data, previous_summary)
+        duration_s = round(time.monotonic() - t0, 2)
     except Exception as e:
         detail = str(e)
         print(f"[{node.node_id}] process  ERROR: {detail}")
@@ -120,6 +123,7 @@ async def _run_process(node: NodeDir, entry: FetchEntry, raw_data: str) -> StepL
         status=result.status,
         summary=result.summary,
         new_targets=new_targets,
+        duration_s=duration_s,
     )
     node.mark_summarize_done(entry, model=settings.openrouter_model, status=result.status, result_file=result_file)
 

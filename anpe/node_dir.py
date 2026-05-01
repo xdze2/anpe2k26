@@ -187,6 +187,7 @@ class NodeDir:
         status: str,
         summary: str,
         new_targets: list[tuple[str, str]],
+        duration_s: float | None = None,
     ) -> str:
         """Write one summarize result file. Returns the filename."""
         if not self._summarize_dir.exists():
@@ -199,6 +200,7 @@ class NodeDir:
             "fetch_uid": entry.uid,
             "model": model,
             "status": status,
+            "duration_s": duration_s,
             "summary": summary,
             "new_targets": [{"tool": t, "target": u} for t, u in new_targets],
         }
