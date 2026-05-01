@@ -11,8 +11,9 @@ To be applied when the current `backlog/` folder is reorganized.
 docs/
   product/          ← goals, user scenarios, known issues (what a client cares about)
   design/           ← architecture and component specs (internal)
-  reference/        ← external APIs, data sources (internal)
-dev_log/            ← dated narrative entries: why we tried things, what we learned, dead ends
+  reference/        ← external APIs, data sources (internal); each subfolder has an index.md
+  dev_log/          ← dated narrative entries: why we tried things, what we learned, dead ends
+  process.md        ← how we work: conventions, workflow, tooling decisions
 ideas/              ← low-friction, no-commitment scratchpad (pre-spec)
 ```
 
