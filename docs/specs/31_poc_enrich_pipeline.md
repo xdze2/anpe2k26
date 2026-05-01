@@ -89,12 +89,25 @@ anpe enrich NODEID                    # pop one item, fetch, llm_summarize, save
 
 ## Storage
 
-Minimal. Two files per node:
+Three artifact types per node:
 
 - `summary.md` — current summary, overwritten on each update
-- `queue.jsonl` — append-only, one entry per target, fields: `status`, `tool`, `target`, `ts`
+- `queue.jsonl` — append-only event log (see below)
+- `raw_<tool>_<slug>_<ts>.txt` — raw fetch output, one file per completed fetch
 
-No `enrichment.jsonl` for now. Logging goes to stdout or a simple text log.
+No `enrichment.jsonl` for now. Logging goes to stdout.
+
+### queue.jsonl event log
+
+Each line is one event. State is reconstructed by replaying events — the file is never rewritten.
+
+```jsonl
+{"event": "put",   "uid": "a3f1", "tool": "ddg", "target": "Hugging Face", "ts": "..."}
+{"event": "done",  "uid": "a3f1", "raw_file": "raw_ddg_Hugging_Face_20260501T162300.txt", "ts": "..."}
+{"event": "error", "uid": "a3f1", "detail": "DDG returned no results", "ts": "..."}
+```
+
+`uid` is a short random hex (8 chars). A target is pending if it has a `put` with no matching `done` or `error`. The `raw_file` field on `done` links the event to the fetch artifact on disk.
 
 ## What we want to learn
 
@@ -102,6 +115,20 @@ No `enrichment.jsonl` for now. Logging goes to stdout or a simple text log.
 - Does it propose sensible next targets?
 - How many fetch cycles does it take to get a meaningful picture of a company?
 - Where does it get stuck or produce noise?
+
+## Insights
+
+Design decisions made during implementation:
+
+**Append-only event log for the queue.** The initial design stored status directly on
+each queue entry and rewrote lines in-place on completion. Switched to an event log
+(`put` / `done` / `error`) with a `uid` per target. Benefits: no file mutation, full
+history preserved, `raw_file` pointer on `done` keeps fetch artifacts linked to the
+event that produced them. State is reconstructed by replaying events forward.
+
+**`uid` is random hex, not a hash of tool+target.** A hash looks deterministic but
+adds no value (you never look up by it), and breaks if the same target is queued
+twice intentionally.
 
 ## Explicitly deferred
 

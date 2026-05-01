@@ -27,23 +27,23 @@ async def enrich_step(node_id: str) -> StepLog:
         print(f"[{node_id}] queue is empty")
         return StepLog(node_id=node_id, tool="", target="", status="empty_queue", new_targets=[])
 
-    print(f"[{node_id}] fetch  [{entry.tool}] {entry.target!r}")
-    raw_data = _fetch(entry)
+    print(f"[{node_id}] fetch  [{entry.tool}] {entry.target!r}  (uid={entry.uid})")
+    raw_data, error = _fetch(entry)
+
     if raw_data is None:
-        print(f"[{node_id}] fetch  ERROR")
-        node.mark_entry(entry, "error")
+        print(f"[{node_id}] fetch  ERROR: {error}")
+        node.mark_error(entry, error or "unknown")
         return StepLog(node_id=node_id, tool=entry.tool, target=entry.target,
                        status="fetch_error", new_targets=[])
 
     print(f"[{node_id}] fetch  ok  ({len(raw_data)} chars)")
-    node.save_raw(entry.tool, entry.target, raw_data)
+    raw_file = node.save_raw(entry.tool, entry.target, raw_data)
+    node.mark_done(entry, raw_file)
 
     previous_summary = node.get_summary()
-    print(f"[{node_id}] llm    summarize  (previous summary: {len(previous_summary)} chars)")
+    print(f"[{node_id}] llm    summarize  (previous: {len(previous_summary)} chars)")
     result = await llm_summarize(raw_data, previous_summary)
     print(f"[{node_id}] llm    status={result.status!r}  new_targets={len(result.new_targets)}")
-
-    node.mark_entry(entry, "done")
 
     if result.status == "not_relevant":
         return StepLog(node_id=node_id, tool=entry.tool, target=entry.target,
@@ -60,13 +60,11 @@ async def enrich_step(node_id: str) -> StepLog:
                    status=result.status, new_targets=new_targets)
 
 
-def _fetch(entry: QueueEntry) -> str | None:
+def _fetch(entry: QueueEntry) -> tuple[str, None] | tuple[None, str]:
     fetch_fn = FETCH_TOOLS.get(entry.tool)
     if fetch_fn is None:
-        print(f"  unknown tool: {entry.tool!r}")
-        return None
+        return None, f"unknown tool: {entry.tool!r}"
     try:
-        return fetch_fn(entry.target)
+        return fetch_fn(entry.target), None
     except Exception as e:
-        print(f"  exception: {e}")
-        return None
+        return None, str(e)
