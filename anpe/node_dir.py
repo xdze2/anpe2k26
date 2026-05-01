@@ -144,6 +144,22 @@ class NodeDir:
             {"event": "summarize_error", "uid": entry.uid, "detail": detail, "ts": _now()}
         )
 
+    def get_fetch_history(self) -> list[dict]:  # type: ignore[type-arg]
+        """Return one summary dict per uid, ordered by put timestamp."""
+        puts, latest = self._latest_event_per_uid()
+        rows = []
+        for uid, put_ev in puts.items():
+            last = latest.get(uid, put_ev)
+            rows.append({
+                "uid": uid,
+                "tool": put_ev.get("tool", ""),
+                "target": put_ev.get("target", ""),
+                "put_ts": put_ev.get("ts", ""),
+                "last_event": last["event"],
+                "last_ts": last.get("ts", ""),
+            })
+        return rows
+
     def save_raw(self, tool: str, target: str, data: str, ext: str = "txt") -> str:
         """Write raw fetch output to raw_data/. Returns the filename."""
         if not self._raw_dir.exists():

@@ -4,22 +4,16 @@ from __future__ import annotations
 
 import asyncio
 from collections.abc import AsyncIterable
+from typing import TYPE_CHECKING
 
 import click
-from prompt_toolkit import PromptSession
-from prompt_toolkit.formatted_text import HTML
-from pydantic_ai import AgentStreamEvent, FunctionToolCallEvent, RunContext
-from rich.columns import Columns
-from rich.console import Console, Group
-from rich.live import Live
-from rich.spinner import Spinner
+from rich.console import Console
 from rich.text import Text
 
-from anpe.agent import agent
-from anpe.config import settings
-from anpe.enrich.pipeline import StepLog, enrich_step, summarize_step
-from anpe.enrich.registry import FETCH_TOOLS
 from anpe.node_dir import NodeDir
+
+if TYPE_CHECKING:
+    from anpe.enrich.pipeline import StepLog
 
 console = Console()
 
@@ -43,41 +37,49 @@ def _print_assistant(text: str) -> None:
     console.print()
 
 
-def _print_status(tokens_in: int, tokens_out: int) -> None:
-    parts = Text()
-    parts.append(f" {tokens_in} → {tokens_out} tokens", style="dim")
-    parts.append("   ", style="dim")
-    parts.append(settings.openrouter_model, style="dim")
-    console.print(parts)
-    console.print()
-
-
-async def _run_agent(user_text: str) -> tuple[str, int, int]:
-    tool_lines: list[Text] = []
-    spinner = Spinner("dots", style="yellow")
-
-    def _renderable() -> Group:
-        spinner_line = Columns([spinner, Text("  en attente…", style="dim")])
-        return Group(spinner_line, *tool_lines)
-
-    live = Live(_renderable(), console=console, transient=True, refresh_per_second=12)
-
-    async def _handle_events(
-        ctx: RunContext[None], events: AsyncIterable[AgentStreamEvent]
-    ) -> None:
-        async for event in events:
-            if isinstance(event, FunctionToolCallEvent):
-                tool_lines.append(Text(f"   ⟳ {event.part.tool_name}", style="yellow"))
-                live.update(_renderable())
-
-    with live:
-        result = await agent.run(user_text, event_stream_handler=_handle_events)
-
-    usage = result.usage()
-    return result.output, usage.input_tokens or 0, usage.output_tokens or 0
-
-
 async def _chat_loop() -> None:
+    from anpe.agent import agent
+    from anpe.config import settings
+    from prompt_toolkit import PromptSession
+    from prompt_toolkit.formatted_text import HTML
+    from pydantic_ai import AgentStreamEvent, FunctionToolCallEvent, RunContext
+    from rich.columns import Columns
+    from rich.console import Group
+    from rich.live import Live
+    from rich.spinner import Spinner
+
+    def _print_status(tokens_in: int, tokens_out: int) -> None:
+        parts = Text()
+        parts.append(f" {tokens_in} → {tokens_out} tokens", style="dim")
+        parts.append("   ", style="dim")
+        parts.append(settings.openrouter_model, style="dim")
+        console.print(parts)
+        console.print()
+
+    async def _run_agent(user_text: str) -> tuple[str, int, int]:
+        tool_lines: list[Text] = []
+        spinner = Spinner("dots", style="yellow")
+
+        def _renderable() -> Group:
+            spinner_line = Columns([spinner, Text("  en attente…", style="dim")])
+            return Group(spinner_line, *tool_lines)
+
+        live = Live(_renderable(), console=console, transient=True, refresh_per_second=12)
+
+        async def _handle_events(
+            ctx: RunContext[None], events: AsyncIterable[AgentStreamEvent]
+        ) -> None:
+            async for event in events:
+                if isinstance(event, FunctionToolCallEvent):
+                    tool_lines.append(Text(f"   ⟳ {event.part.tool_name}", style="yellow"))
+                    live.update(_renderable())
+
+        with live:
+            result = await agent.run(user_text, event_stream_handler=_handle_events)
+
+        usage = result.usage()
+        return result.output, usage.input_tokens or 0, usage.output_tokens or 0
+
     _print_header()
     _print_assistant("Bonjour ! Comment puis-je vous aider ?")
 
@@ -123,13 +125,19 @@ def chat() -> None:
 
 @cli.command("add_target")
 @click.argument("node_id")
-@click.argument("tool", type=click.Choice(list(FETCH_TOOLS)))
+@click.argument("tool")
 @click.argument("keyword")
 def add_target(node_id: str, tool: str, keyword: str) -> None:
     """Append a fetch target to a node's queue.
 
     Example: anpe add_target acme ddg "Acme Corp France"
     """
+    from anpe.enrich.registry import FETCH_TOOLS
+
+    if tool not in FETCH_TOOLS:
+        raise click.BadParameter(
+            f"must be one of {list(FETCH_TOOLS)}", param_hint="TOOL"
+        )
     node = NodeDir(node_id)
     is_new = not node.exists()
     node.append_target(tool, keyword)
@@ -163,8 +171,51 @@ def enrich(node_id: str) -> None:
 
     Example: anpe enrich acme
     """
+    from anpe.enrich.pipeline import enrich_step
+
     log = asyncio.run(enrich_step(node_id))
     _print_step_log(log)
+
+
+@cli.command("status")
+@click.argument("node_id")
+def status(node_id: str) -> None:
+    """Show fetch status and history for a node.
+
+    Example: anpe status acme
+    """
+    node = NodeDir(node_id)
+    if not node.exists():
+        console.print(f" [bold red]Error[/] node {node_id!r} not found")
+        return
+
+    rows = node.get_fetch_history()
+    if not rows:
+        console.print(f" [dim]node[/] [bold]{node_id}[/]  [dim](no fetch history)[/]")
+        return
+
+    console.print(f" [dim]node[/] [bold]{node_id}[/]")
+    console.print()
+
+    _STATUS_STYLE = {
+        "put": "yellow",
+        "fetch_done": "cyan",
+        "fetch_error": "red",
+        "not_found": "red",
+        "retryable": "yellow",
+        "blocked": "red",
+        "summarize_done": "green",
+        "summarize_error": "red",
+    }
+
+    for row in rows:
+        style = _STATUS_STYLE.get(row["last_event"], "white")
+        target_display = row["target"][:50]
+        ts = row["put_ts"][:16].replace("T", " ") if row["put_ts"] else ""
+        console.print(
+            f" [dim]{row['uid']}[/]  [bold]{row['tool']}[/]  {target_display}"
+            f"  [{style}]{row['last_event']}[/]  [dim]{ts}[/]"
+        )
 
 
 @cli.command("summarize")
@@ -180,6 +231,8 @@ def summarize(node_id: str, fetch_uid: str | None) -> None:
       anpe summarize acme
       anpe summarize acme a3f1
     """
+    from anpe.enrich.pipeline import summarize_step
+
     try:
         log = asyncio.run(summarize_step(node_id, fetch_uid))
     except ValueError as e:
