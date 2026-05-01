@@ -144,13 +144,13 @@ class NodeDir:
             {"event": "summarize_error", "uid": entry.uid, "detail": detail, "ts": _now()}
         )
 
-    def save_raw(self, tool: str, target: str, data: str) -> str:
+    def save_raw(self, tool: str, target: str, data: str, ext: str = "txt") -> str:
         """Write raw fetch output to raw_data/. Returns the filename."""
         if not self._raw_dir.exists():
             self.init()
         ts = datetime.now(timezone.utc).strftime("%Y%m%dT%H%M%S")
         slug = target[:40].replace("/", "_").replace(" ", "_")
-        filename = f"raw_{tool}_{slug}_{ts}.txt"
+        filename = f"raw_{tool}_{slug}_{ts}.{ext}"
         (self._raw_dir / filename).write_text(data, encoding="utf-8")
         return filename
 

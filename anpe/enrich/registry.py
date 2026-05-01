@@ -1,19 +1,25 @@
-"""Registry of fetch tools available to the enrichment pipeline.
-
-Each tool has signature: (target: str) -> str
-It receives a query string or URL and returns raw text.
-It raises on failure (network error, no results, …).
-"""
+"""Registry of fetch tools available to the enrichment pipeline."""
 
 from __future__ import annotations
 
-from collections.abc import Callable
+from collections.abc import Awaitable, Callable
+from dataclasses import dataclass
 
-from anpe.enrich.tools.ddg import ddg_search
+from anpe.enrich.fetch.ddg import ddg_search
+from anpe.enrich.fetch.siren import siren_fetch, siren_process
+from anpe.enrich.summarize import EnrichResult, llm_summarize
 
-FETCH_TOOLS: dict[str, Callable[[str], str]] = {
-    "ddg": ddg_search,
-    # "siren":  siren_fetch,   # deferred
-    # "fetch":  http_fetch,    # deferred
-    # "tavily": tavily_fetch,  # deferred
+
+@dataclass
+class FetchTool:
+    fetch: Callable[[str], str]
+    process: Callable[[str, str], EnrichResult | Awaitable[EnrichResult]]
+    raw_ext: str = "txt"
+
+
+FETCH_TOOLS: dict[str, FetchTool] = {
+    "ddg": FetchTool(fetch=ddg_search, process=llm_summarize),
+    "siren": FetchTool(fetch=siren_fetch, process=siren_process, raw_ext="json"),
+    # "fetch": FetchTool(fetch=http_fetch, process=llm_summarize),  # deferred
+    # "tavily": FetchTool(fetch=tavily_fetch, process=llm_summarize),  # deferred
 }
