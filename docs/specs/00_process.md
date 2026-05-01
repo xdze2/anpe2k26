@@ -45,7 +45,7 @@ One file per work session in `docs/dev_log/`:
 log_ISODATE_slug.md
 ```
 
-- `ISODATE` — compact ISO 8601 with hour: `20260430T1430`
+- `ISODATE` — compact ISO 8601 with hour, always UTC: `20260430T1430`
 - `slug` — 2–4 words on the session topic
 
 Logs are freeform — the goal is to capture the building story: what was tried, what changed, and why.

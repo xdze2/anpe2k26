@@ -4,66 +4,54 @@ status: draft
 
 # Principles
 
-High-level design. How the vision translates into a system. what are the big components, how the interact. No detail.s
+High-level design. How the vision translates into a system: the main components, data flows, and logic. No storage or implementation detail.
 
 ## Data vault
 
-All user data lives in a single directory, owned and controlled by the user (private user git repo).
+Two kinds of persistent state:
 
-It contains:
+**User profile** — what the user is looking for: target roles, preferred company sizes, sectors, dealbreakers. Read at startup; updated as the user reacts to companies. Short by design — an interpretation of the user's intent, not a log of everything they've ever said.
 
-- the user profile — what the user is looking for (target roles, preferred company sizes, sectors, dealbreakers,...etc)
-- Data about nodes (aka companies):
-  - fetched raw data
-  - fetched data log and status
-  - an information summary (one per node)
-- chat logs
+**Nodes** — one node per candidate company. A node starts as a bare seed (a SIREN code) and grows as information is collected. It holds:
 
-## Node information summary
+- a summary of everything gathered so far, written from the user's point of view
+- the user's triage verdict
+- the current list of next fetch candidates
+- all raw fetched data (never deleted — kept for cache, replayability, and debugging)
 
-Contains:
+## Enrichment pipeline
 
-- information relevant to the user about the node
-- next possible fetch target
-- gathering status: done, discared, pending
+One entry point: `enrich(node)`. It runs one fetch → eval cycle and updates the node.
 
-## Enrichment workflow: fetch → eval → summarize
+```
+enrich(node):
+  target = next_fetch_target(node)   ← decided by LLM, from full node state
+  raw    = fetch(target)             ← tool call: SIRENE, DDG, HTTP, Tavily, ...
+  result = eval(raw, node, profile)  ← LLM eval, 4 layers (see below)
+  update node with result
+```
 
-Enrichment dispatcher `enrich_node(seed_id)`:
+Raw data is never surfaced directly to the user.
 
-- next_fetch_target(node_summary) -> (fetch_tool, uri)
-- fetch(fetch_tool, uri) -> raw_data, log fetch_status
-- eval(raw_data, user profile, [node_summary]) -> log eval status, new summary, rank_delta (mismatch between user rank and LLM perception)
+The pipeline is oriented toward positive matches: among many candidates, few will be strong positives. Stopping early on confirmed negatives is the default.
 
-Evaluation step is done by a LLM.
+### `next_fetch_target`
 
-Raw data is never surfaced directly to the user, but stored for cache, replayability and debugging.
+Decides what to fetch next, given the full current state of the node (all previous evals and summaries) and the list of available fetch tools with their costs.
 
-### Eval and summarization step
+Output: a ranked list of candidates, each with:
 
-- done by a LLM model
+- the tool and URI to call
+- a short rationale ("LinkedIn URL found in DDG snippet")
+- an estimated information gain ("likely has headcount and tech stack")
 
-Each eval covers three questions in sequence:
+The dispatcher auto-picks the top candidate in autonomous mode. In interactive mode the list can be surfaced to the user.
 
-1. **Data quality** — did the fetch return usable content?
-2. **Content value** — is there anything new and relevant here?
-3. **Match delta** — does this change the assessment against the user's profile?
+This is a LLM call. The prompt includes the available tools and their costs, so the LLM naturally respects cost ordering without hardcoded sequencing logic.
 
-The Match delta and summarizatin is always relative to the user profile and to what was already known. The summary
-it produces is not an objective description of the company — it is an interpretation
-from the user's point of view.
+### Fetch
 
-Only information that is both new and relevant produces a written output. Confirmed negatives stop the pipeline early.
-
-The pipeline is oriented toward positive matches:
-among many candidates, few will be strong positives, so stopping early on negatives is the default.
-
-The role of the summarization step is also to identify potiential next target for information retrieval.
-
-### Information sources and cost
-
-Sources are ordered by cost. Cheaper sources run first; expensive ones only after the
-user has expressed interest.
+A tool call. Each source has a fixed interface: takes a URI (or a query), returns raw data and a fetch status.
 
 | Source           | Cost                                             |
 | ---------------- | ------------------------------------------------ |
@@ -73,12 +61,60 @@ user has expressed interest.
 | Tavily search    | paid (1000 req/month quota) — post-interest only |
 | ...              | ...                                              |
 
-Each source has a fetch step and a paired eval step. Adding a new source always follows
-the same pattern; no structural changes needed.
+Adding a new source follows the same pattern every time. No structural changes needed.
+
+### Eval — 4 layers
+
+Every fetch is followed by an eval step (LLM). The four layers run in sequence; later layers are skipped if an earlier one stops the pipeline.
+
+**Layer 1 — Data quality**
+
+Did the fetch return usable content?
+
+| Value       | Meaning                   | Action                  |
+| ----------- | ------------------------- | ----------------------- |
+| `ok`        | usable content            | proceed                 |
+| `not_found` | 404, empty, no results    | stop — log and move on  |
+| `retryable` | network error, rate limit | stop — retry later      |
+| `blocked`   | Cloudflare, CAPTCHA       | stop — needs a code fix |
+
+**Layer 2 — Content value**
+
+Is there anything relevant to this company here?
+
+| Value          | Meaning                         | Action  |
+| -------------- | ------------------------------- | ------- |
+| `relevant`     | content applies to this company | proceed |
+| `not_relevant` | wrong company, empty content    | stop    |
+
+**Layer 3 — New information**
+
+Is this new relative to what the node summary already captures?
+
+| Value   | Meaning              | Action                   |
+| ------- | -------------------- | ------------------------ |
+| `new`   | not previously known | proceed — update summary |
+| `known` | already captured     | stop — no update needed  |
+
+When `new`: the node summary is rewritten to incorporate the new information. The summary is always relative to the user profile — it is an interpretation for this user, not an objective company description.
+
+**Layer 4 — Match delta**
+
+Given everything now known about the node, does the user's current verdict still hold? This layer looks at the full node state, not just the new data.
+
+| Value       | Meaning                                  | Action                             |
+| ----------- | ---------------------------------------- | ---------------------------------- |
+| `no_change` | new info consistent with current verdict | continue silently                  |
+| `revisit`   | new info that could shift the verdict    | surface to user with reason        |
+| `discard`   | clearly negative signal                  | stop pipeline; mark node discarded |
+
+`revisit` carries the reason — the specific new signal that warrants user attention ("found 500 employees; you said small teams only"). The user is shown the delta, not the full data dump.
+
+The verdict itself is always owned by the user. The eval never sets it — it only flags when it might need updating.
 
 ## Triage
 
-Each company carries a user verdict:
+Each node carries a user verdict:
 
 | Status       | Meaning                      |
 | ------------ | ---------------------------- |
@@ -87,23 +123,4 @@ Each company carries a user verdict:
 | `good`       | interesting                  |
 | `very_good`  | strong match                 |
 
-The verdict is set by the user directly, or inferred by the agent from eval results
-and the search profile. The agent proposes; the user confirms or corrects.
-
-## Agent
-
-- A AI chat with an IA Agent is main user interface and interaction loop
-
-A conversational agent (pydantic-ai) glues the tools together and handles user input.
-Its tools are: read/write the search profile, read/update company nodes, and trigger
-enrichment steps.
-
-The agent operates in two modes:
-
-- **Interactive** — responds to user requests in a chat loop.
-- **Autonomous** — runs a batch of pending enrichment steps without user input
-  (e.g. `uv run anpe enrich`). Stops and surfaces results that need user judgment
-  (`unclear` verdicts, `blocked` fetches).
-
-The eval model and the chat agent share no context. Eval steps run separately; the
-agent reads their output files.
+Set by the user directly, or proposed by the agent from eval results. The agent proposes; the user confirms or corrects.
