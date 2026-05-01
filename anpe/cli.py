@@ -17,7 +17,7 @@ from rich.text import Text
 
 from anpe.agent import agent
 from anpe.config import settings
-from anpe.enrich.pipeline import enrich_step
+from anpe.enrich.pipeline import StepLog, enrich_step, summarize_step
 from anpe.enrich.registry import FETCH_TOOLS
 from anpe.node_dir import NodeDir
 
@@ -138,20 +138,13 @@ def add_target(node_id: str, tool: str, keyword: str) -> None:
     console.print(f" [dim]queued[/] [{tool}] {keyword}")
 
 
-@cli.command("enrich")
-@click.argument("node_id")
-def enrich(node_id: str) -> None:
-    """Run one enrichment step on a node.
-
-    Example: anpe enrich acme
-    """
-    log = asyncio.run(enrich_step(node_id))
-
+def _print_step_log(log: StepLog) -> None:
     status_style = {
         "ok": "green",
         "not_relevant": "red",
         "no_data": "yellow",
         "fetch_error": "red",
+        "summarize_error": "red",
         "empty_queue": "dim",
     }.get(log.status, "white")
 
@@ -161,6 +154,38 @@ def enrich(node_id: str) -> None:
     console.print(f" [dim]status[/] [{status_style}]{log.status}[/]")
     for tool, target in log.new_targets:
         console.print(f" [dim]queued[/] [{tool}] {target}")
+
+
+@cli.command("enrich")
+@click.argument("node_id")
+def enrich(node_id: str) -> None:
+    """Run one enrichment step on a node (fetch if pending, summarize if fetch_done).
+
+    Example: anpe enrich acme
+    """
+    log = asyncio.run(enrich_step(node_id))
+    _print_step_log(log)
+
+
+@cli.command("summarize")
+@click.argument("node_id")
+@click.argument("fetch_uid", required=False, default=None)
+def summarize(node_id: str, fetch_uid: str | None) -> None:
+    """Re-run summarize on an already-fetched target, bypassing the queue.
+
+    Uses the most recent fetch_done target if FETCH_UID is omitted.
+    Intended for prompt tuning — does not re-fetch.
+
+    Examples:
+      anpe summarize acme
+      anpe summarize acme a3f1
+    """
+    try:
+        log = asyncio.run(summarize_step(node_id, fetch_uid))
+    except ValueError as e:
+        console.print(f" [bold red]Error[/] {e}")
+        return
+    _print_step_log(log)
 
 
 def run() -> None:

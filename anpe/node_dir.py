@@ -68,37 +68,80 @@ class NodeDir:
         )
         return uid
 
-    def pop_pending(self) -> FetchEntry | None:
-        """Return the first target that has a put but no done/error event."""
+    def _load_fetch_events(self) -> list[dict]:  # type: ignore[type-arg]
         if not self._fetch_file.exists():
-            return None
+            return []
+        return [
+            json.loads(line)
+            for line in self._fetch_file.read_text(encoding="utf-8").splitlines()
+            if line.strip()
+        ]
 
+    def _latest_event_per_uid(self) -> dict[str, dict]:  # type: ignore[type-arg]
+        """Return the last event seen for each uid."""
+        latest: dict[str, dict] = {}  # type: ignore[type-arg]
         puts: dict[str, dict] = {}  # type: ignore[type-arg]
-        closed: set[str] = set()
+        for ev in self._load_fetch_events():
+            uid = ev.get("uid", "")
+            if ev["event"] == "put":
+                puts[uid] = ev
+            latest[uid] = ev
+        return puts, latest
 
-        for line in self._fetch_file.read_text(encoding="utf-8").splitlines():
-            if not line.strip():
-                continue
-            data = json.loads(line)
-            uid = data.get("uid", "")
-            if data["event"] == "put":
-                puts[uid] = data
-            elif data["event"] in ("done", "error"):
-                closed.add(uid)
-
-        for uid, data in puts.items():
-            if uid not in closed:
-                return FetchEntry(uid=uid, tool=data["tool"], target=data["target"])
+    def pop_pending(self) -> FetchEntry | None:
+        """Return the first target in a pending state (put or summarize_error)."""
+        puts, latest = self._latest_event_per_uid()
+        for uid, put_ev in puts.items():
+            last = latest.get(uid, put_ev)
+            if last["event"] in ("put", "summarize_error"):
+                return FetchEntry(uid=uid, tool=put_ev["tool"], target=put_ev["target"])
         return None
 
-    def mark_done(self, entry: FetchEntry, raw_file: str) -> None:
+    def get_fetch_done(self, uid: str) -> dict | None:  # type: ignore[type-arg]
+        """Return the fetch_done event for a uid, or None."""
+        for ev in self._load_fetch_events():
+            if ev.get("uid") == uid and ev["event"] == "fetch_done":
+                return ev
+        return None
+
+    def get_latest_fetch_done(self) -> tuple[FetchEntry, str] | None:
+        """Return (FetchEntry, raw_file) for the most recent fetch_done event."""
+        puts: dict[str, dict] = {}  # type: ignore[type-arg]
+        last_done: dict | None = None  # type: ignore[type-arg]
+        for ev in self._load_fetch_events():
+            uid = ev.get("uid", "")
+            if ev["event"] == "put":
+                puts[uid] = ev
+            elif ev["event"] == "fetch_done":
+                last_done = ev
+        if last_done is None:
+            return None
+        uid = last_done["uid"]
+        put_ev = puts.get(uid)
+        if put_ev is None:
+            return None
+        entry = FetchEntry(uid=uid, tool=put_ev["tool"], target=put_ev["target"])
+        return entry, last_done["raw_file"]
+
+    def mark_fetch_done(self, entry: FetchEntry, raw_file: str) -> None:
         self._append_fetch_event(
-            {"event": "done", "uid": entry.uid, "raw_file": raw_file, "ts": _now()}
+            {"event": "fetch_done", "uid": entry.uid, "raw_file": raw_file, "ts": _now()}
         )
 
-    def mark_error(self, entry: FetchEntry, detail: str) -> None:
+    def mark_fetch_error(self, entry: FetchEntry, detail: str) -> None:
         self._append_fetch_event(
-            {"event": "error", "uid": entry.uid, "detail": detail, "ts": _now()}
+            {"event": "fetch_error", "uid": entry.uid, "detail": detail, "ts": _now()}
+        )
+
+    def mark_summarize_done(self, entry: FetchEntry, model: str, status: str) -> None:
+        self._append_fetch_event(
+            {"event": "summarize_done", "uid": entry.uid,
+             "model": model, "status": status, "ts": _now()}
+        )
+
+    def mark_summarize_error(self, entry: FetchEntry, detail: str) -> None:
+        self._append_fetch_event(
+            {"event": "summarize_error", "uid": entry.uid, "detail": detail, "ts": _now()}
         )
 
     def save_raw(self, tool: str, target: str, data: str) -> str:

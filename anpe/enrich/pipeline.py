@@ -15,12 +15,13 @@ class StepLog:
     node_id: str
     tool: str
     target: str
-    status: str       # "ok" | "not_relevant" | "no_data" | "fetch_error" | "empty_queue"
+    # "ok" | "not_relevant" | "no_data" | "fetch_error" | "summarize_error" | "empty_queue"
+    status: str
     new_targets: list[tuple[str, str]]
 
 
 async def enrich_step(node_id: str) -> StepLog:
-    """Pop one pending target, fetch it, summarize, save. Return a log entry."""
+    """Pop one pending target, fetch if needed, then summarize. Return a log entry."""
     node = NodeDir(node_id)
 
     entry = node.pop_pending()
@@ -28,23 +29,74 @@ async def enrich_step(node_id: str) -> StepLog:
         print(f"[{node_id}] queue is empty")
         return StepLog(node_id=node_id, tool="", target="", status="empty_queue", new_targets=[])
 
-    print(f"[{node_id}] fetch  [{entry.tool}] {entry.target!r}  (uid={entry.uid})")
-    raw_data, error = _fetch(entry)
+    # Check if fetch is already done (summarize_error retry case)
+    fetch_done_ev = node.get_fetch_done(entry.uid)
+    if fetch_done_ev is not None:
+        raw_file = fetch_done_ev["raw_file"]
+        raw_data = (node._raw_dir / raw_file).read_text(encoding="utf-8")
+        print(f"[{node_id}] fetch  already done, re-running summarize (uid={entry.uid})")
+    else:
+        print(f"[{node_id}] fetch  [{entry.tool}] {entry.target!r}  (uid={entry.uid})")
+        raw_data, error = _fetch(entry)
 
-    if raw_data is None:
-        print(f"[{node_id}] fetch  ERROR: {error}")
-        node.mark_error(entry, error or "unknown")
-        return StepLog(node_id=node_id, tool=entry.tool, target=entry.target,
-                       status="fetch_error", new_targets=[])
+        if raw_data is None:
+            print(f"[{node_id}] fetch  ERROR: {error}")
+            node.mark_fetch_error(entry, error or "unknown")
+            return StepLog(node_id=node_id, tool=entry.tool, target=entry.target,
+                           status="fetch_error", new_targets=[])
 
-    print(f"[{node_id}] fetch  ok  ({len(raw_data)} chars)")
-    raw_file = node.save_raw(entry.tool, entry.target, raw_data)
-    node.mark_done(entry, raw_file)
+        print(f"[{node_id}] fetch  ok  ({len(raw_data)} chars)")
+        raw_file = node.save_raw(entry.tool, entry.target, raw_data)
+        node.mark_fetch_done(entry, raw_file)
 
+    return await _run_summarize(node, entry, raw_data)
+
+
+async def summarize_step(node_id: str, fetch_uid: str | None = None) -> StepLog:
+    """Re-run summarize on an already-fetched target, bypassing the queue.
+
+    If fetch_uid is None, uses the most recent fetch_done event.
+    Intended for prompt tuning — appends a new summarize.jsonl entry each time.
+    """
+    node = NodeDir(node_id)
+
+    if fetch_uid is not None:
+        fetch_done_ev = node.get_fetch_done(fetch_uid)
+        if fetch_done_ev is None:
+            raise ValueError(f"No fetch_done event found for uid={fetch_uid!r}")
+        # Reconstruct entry from events
+        puts, _ = node._latest_event_per_uid()
+        put_ev = puts.get(fetch_uid)
+        if put_ev is None:
+            raise ValueError(f"No put event found for uid={fetch_uid!r}")
+        entry = FetchEntry(uid=fetch_uid, tool=put_ev["tool"], target=put_ev["target"])
+        raw_file = fetch_done_ev["raw_file"]
+    else:
+        result = node.get_latest_fetch_done()
+        if result is None:
+            raise ValueError(f"No fetch_done event found for node {node_id!r}")
+        entry, raw_file = result
+
+    raw_data = (node._raw_dir / raw_file).read_text(encoding="utf-8")
+    print(f"[{node_id}] summarize  uid={entry.uid}  file={raw_file}")
+    return await _run_summarize(node, entry, raw_data)
+
+
+async def _run_summarize(node: NodeDir, entry: FetchEntry, raw_data: str) -> StepLog:
     previous_summary = node.get_summary()
-    print(f"[{node_id}] llm    summarize  (previous: {len(previous_summary)} chars)")
-    result = await llm_summarize(raw_data, previous_summary)
-    print(f"[{node_id}] llm    status={result.status!r}  new_targets={len(result.new_targets)}")
+    print(f"[{node.node_id}] llm    summarize  (previous: {len(previous_summary)} chars)")
+
+    try:
+        result = await llm_summarize(raw_data, previous_summary)
+    except Exception as e:
+        detail = str(e)
+        print(f"[{node.node_id}] llm    ERROR: {detail}")
+        node.mark_summarize_error(entry, detail)
+        return StepLog(node_id=node.node_id, tool=entry.tool, target=entry.target,
+                       status="summarize_error", new_targets=[])
+
+    print(f"[{node.node_id}] llm    status={result.status!r}"
+          f"  new_targets={len(result.new_targets)}")
 
     new_targets = [(t.tool, t.target) for t in result.new_targets]
     node.append_summarize_event(
@@ -54,9 +106,10 @@ async def enrich_step(node_id: str) -> StepLog:
         summary=result.summary,
         new_targets=new_targets,
     )
+    node.mark_summarize_done(entry, model=settings.openrouter_model, status=result.status)
 
     if result.status == "not_relevant":
-        return StepLog(node_id=node_id, tool=entry.tool, target=entry.target,
+        return StepLog(node_id=node.node_id, tool=entry.tool, target=entry.target,
                        status="not_relevant", new_targets=[])
 
     node.save_summary(result.summary)
@@ -65,7 +118,7 @@ async def enrich_step(node_id: str) -> StepLog:
         if tool in FETCH_TOOLS:
             node.append_target(tool, target)
 
-    return StepLog(node_id=node_id, tool=entry.tool, target=entry.target,
+    return StepLog(node_id=node.node_id, tool=entry.tool, target=entry.target,
                    status=result.status, new_targets=new_targets)
 
 
