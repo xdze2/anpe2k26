@@ -1,15 +1,27 @@
+# Process
 
-- Code implementation is written by Claude
+## docs/ layout
 
-docs/ is the project specification
+```
+docs/
+├── specs/          # project specification (this folder)
+├── dev_log/        # one file per work session
+├── inbox/          # raw ideas, not yet examined
+├── known_issues/   # known bugs or limitations, not yet acted on
+└── references/     # external docs, API specs, research material
+```
 
+`docs/specs/` is the project specification. Files cover key parts of the app, numbered for rough reading order.
 
+## specs/
 
-## Feature spec lifecycle
+Files are numbered with a tens-based scheme: `10_`, `20_`, `30_`... The tens digit groups related topics; the units digit allows sub-parts (`41_`, `42_`) without renumbering. Numbers reflect reading order, not priority.
 
-One file per feature, numerotation in file name "41_", "42_"...etc
+## Spec file lifecycle
 
-status tracked in frontmatter:
+One file per key part, number prefix in filename (`40_`, `41_`...).
+
+Status tracked in frontmatter:
 
 ```markdown
 ---
@@ -21,33 +33,19 @@ status: draft | active | done
 - **active** — being built against right now
 - **done** — implemented, kept as reference
 
-Files stay in `docs/design/` regardless of status.
-`ideas/` is pre-status: nothing there has a spec yet.
+Files stay in `docs/specs/` regardless of status.
 
+`docs/inbox/` is pre-status: raw ideas, not yet examined.
 
-## Dev log format
-keep track of work session, exploration and backtracking...
+## Dev log
 
-
-One file per session, in `dev_log/`:
+One file per work session in `docs/dev_log/`:
 
 ```
 log_ISODATE_slug.md
 ```
 
 - `ISODATE` — compact ISO 8601 with hour: `20260430T1430`
-- `slug` — 2-4 words describing the session topic
+- `slug` — 2–4 words on the session topic
 
-Example: `log_20260430T1430_company-enrichment-pipeline.md`
-
-### File structure
-
-```markdown
-# YYYY-MM-DD — Session title
-
-## What we worked on
-## Why / context
-## What we learned / decisions made
-## Dead ends or things tried that didn't work
-## Next
-```
+Logs are freeform — the goal is to capture the building story: what was tried, what changed, and why.
