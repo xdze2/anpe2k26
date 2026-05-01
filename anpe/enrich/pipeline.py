@@ -124,8 +124,12 @@ async def _run_process(node: NodeDir, entry: FetchEntry, raw_data: str) -> StepL
     node.mark_summarize_done(entry, model=settings.openrouter_model, status=result.status, result_file=result_file)
 
     if result.status == "not_relevant":
+        # Still enqueue any retry targets the LLM proposed (refined queries).
+        for tool_slug, target in new_targets:
+            if tool_slug in FETCH_TOOLS:
+                node.append_target(tool_slug, target)
         return StepLog(node_id=node.node_id, tool=entry.tool, target=entry.target,
-                       status="not_relevant")
+                       status="not_relevant", new_targets=new_targets)
 
     node.save_summary(result.summary)
 

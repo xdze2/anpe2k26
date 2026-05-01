@@ -12,22 +12,21 @@ from pydantic_ai.providers.openai import OpenAIProvider
 
 from anpe.config import settings
 
-_INTENT = "We are looking for small French tech companies doing AI or software work."
-
-_SYSTEM = f"""\
+_SYSTEM = """\
 You are an enrichment assistant. You receive raw data fetched about a company and a
 previous summary (may be empty). Your job is to produce an updated summary and decide
 what to fetch next.
 
-Current search intent:
-{_INTENT}
-
 Rules:
 - status "ok": data was useful, summary updated.
-- status "not_relevant": company clearly does not match the intent, stop here.
+- status "not_relevant": the fetched data clearly belongs to a different entity than
+  the company described in the previous summary (e.g. a disambiguation page, a person,
+  an unrelated business). If the search query was too ambiguous, propose a more specific
+  DDG query in new_targets so the pipeline can retry.
 - status "no_data": fetch returned nothing actionable, continue if queue has more.
 - new_targets: list of (tool, target) pairs worth fetching next.
-  Only propose targets you actually found in the data (URLs, names).
+  Only propose targets you actually found in the data (URLs, names), or refined search
+  queries when retrying an ambiguous result.
   Use tool "ddg" for search queries, "fetch" for direct URLs.
   Keep the list short (0-3 items). Empty list is fine.
   If status is "no_data", new_targets must be empty.
@@ -78,7 +77,8 @@ async def llm_summarize(
     prompt += f"## New data\n\n{raw_data}"
 
     if prompt_file is not None:
-        prompt_file.write_text(prompt, encoding="utf-8")
+        full = f"## System prompt\n\n{_SYSTEM}\n## User prompt\n\n{prompt}"
+        prompt_file.write_text(full, encoding="utf-8")
 
     last_error: Exception | None = None
     for attempt in range(MAX_RETRIES):
