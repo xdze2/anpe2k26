@@ -149,12 +149,33 @@ summarize logs allows re-running the LLM on already-fetched data (e.g. after a p
 change) without hitting the network again. The `fetch_uid` field in `summarize.jsonl`
 links each LLM call back to the fetch that produced the input data.
 
-## Explicitly deferred
+## Next session — prompt tuning
 
-- User profile (replaced by hardcoded intent)
-- Match delta / triage verdict
-- `revisit` surfacing
-- Multi-node / background worker
-- Agent integration
-- `enrichment.jsonl` audit log
-- Additional fetch tools: `siren`, `fetch` (raw HTTP), `tavily`, …
+The loop runs end-to-end. The blocking gap is that `llm_summarize` rarely proposes
+`new_targets`, so the loop stops after one step instead of following up with the
+company website or a more specific DDG query.
+
+**Goal:** get `new_targets` working reliably so the loop chains 2-3 fetch steps on its own.
+
+### What to do
+
+1. Test on 3-4 real companies, collect `summarize.jsonl` output for each.
+2. For each case where `new_targets` is empty: look at the raw DDG data — were there
+   obvious URLs or names to follow up on? If yes, the prompt is failing to extract them.
+3. Iterate on the system prompt in `anpe/enrich/summarize.py`. The fetch cache means
+   no re-fetching needed — just re-run `anpe enrich` on existing nodes.
+4. Add the `fetch` tool (raw HTTP GET, `httpx`) so LLM-proposed website URLs can
+   actually be fetched. Without it, `new_targets` with `"fetch"` are silently dropped.
+
+### What good looks like
+
+- DDG step produces 1-2 follow-up targets (company website, or a more specific query)
+- `fetch` step on the website produces a richer summary
+- `not_relevant` threshold feels correctly calibrated (Veolia: yes, Synapse: no)
+
+### Lower priority for now
+
+- SIREN fetch (DDG already covers basic company info)
+- Agent integration (too early, loop quality not validated yet)
+- Error handling improvements (good enough for manual testing)
+- User profile replacing hardcoded intent
