@@ -55,7 +55,7 @@ def siren_fetch(number: str) -> str:
     return json.dumps(result)
 
 
-def siren_process(raw_data: str, previous_summary: str) -> EnrichResult:
+async def siren_process(raw_data: str, previous_summary: str) -> EnrichResult:
     """Format Recherche Entreprises JSON into a structured summary and propose a DDG follow-up."""
     r = json.loads(raw_data)
     siege = r.get("siege", {})

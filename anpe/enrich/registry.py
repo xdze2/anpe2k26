@@ -13,7 +13,7 @@ from anpe.enrich.summarize import EnrichResult, llm_summarize
 @dataclass
 class FetchTool:
     fetch: Callable[[str], str]
-    process: Callable[[str, str], EnrichResult | Awaitable[EnrichResult]]
+    process: Callable[[str, str], Awaitable[EnrichResult]]
     raw_ext: str = "txt"
 
 

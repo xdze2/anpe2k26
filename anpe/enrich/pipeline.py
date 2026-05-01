@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-import inspect
 from dataclasses import dataclass, field
 
 from anpe.config import settings
@@ -49,7 +48,7 @@ async def enrich_step(node_id: str) -> StepLog:
                            status=fetch_status or "fetch_error")
 
         print(f"[{node_id}] fetch  ok  ({len(raw_data)} chars)")
-        ext = FETCH_TOOLS[entry.tool].raw_ext if entry.tool in FETCH_TOOLS else "txt"
+        ext = FETCH_TOOLS[entry.tool].raw_ext
         raw_file = node.save_raw(entry.tool, entry.target, raw_data, ext=ext)
         node.mark_fetch_done(entry, raw_file)
 
@@ -96,8 +95,7 @@ async def _run_process(node: NodeDir, entry: FetchEntry, raw_data: str) -> StepL
     print(f"[{node.node_id}] process  [{entry.tool}]  (previous: {len(previous_summary)} chars)")
 
     try:
-        maybe_coro = tool.process(raw_data, previous_summary)
-        result = await maybe_coro if inspect.isawaitable(maybe_coro) else maybe_coro  # type: ignore[arg-type]
+        result = await tool.process(raw_data, previous_summary)
     except Exception as e:
         detail = str(e)
         print(f"[{node.node_id}] process  ERROR: {detail}")
