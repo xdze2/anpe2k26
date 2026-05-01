@@ -1,10 +1,11 @@
-"""ANPE interactive chat — rich + asyncio."""
+"""ANPE CLI — interactive chat + enrichment commands."""
 
 from __future__ import annotations
 
 import asyncio
 from collections.abc import AsyncIterable
 
+import click
 from prompt_toolkit import PromptSession
 from prompt_toolkit.formatted_text import HTML
 from pydantic_ai import AgentStreamEvent, FunctionToolCallEvent, RunContext
@@ -16,10 +17,17 @@ from rich.text import Text
 
 from anpe.agent import agent
 from anpe.config import settings
+from anpe.enrich.registry import FETCH_TOOLS
+from anpe.node_dir import NodeDir
 
 console = Console()
 
 _QUIT_WORDS = {"quit", "exit", "q", "quitter", "au revoir", "bye"}
+
+
+# ---------------------------------------------------------------------------
+# Chat helpers
+# ---------------------------------------------------------------------------
 
 
 def _print_header() -> None:
@@ -96,5 +104,38 @@ async def _chat_loop() -> None:
             console.print()
 
 
-def run() -> None:
+# ---------------------------------------------------------------------------
+# CLI group
+# ---------------------------------------------------------------------------
+
+
+@click.group()
+def cli() -> None:
+    """ANPE — Assistant Numérique Pour l'Emploi."""
+
+
+@cli.command("chat")
+def chat() -> None:
+    """Start the interactive chat."""
     asyncio.run(_chat_loop())
+
+
+@cli.command("add_target")
+@click.argument("node_id")
+@click.argument("tool", type=click.Choice(list(FETCH_TOOLS)))
+@click.argument("keyword")
+def add_target(node_id: str, tool: str, keyword: str) -> None:
+    """Append a fetch target to a node's queue.
+
+    Example: anpe add_target acme ddg "Acme Corp France"
+    """
+    node = NodeDir(node_id)
+    is_new = not node.exists()
+    node.append_target(tool, keyword)
+    created = " [dim](created)[/]" if is_new else ""
+    console.print(f" [dim]node[/] [bold]{node_id}[/]{created}")
+    console.print(f" [dim]queued[/] [{tool}] {keyword}")
+
+
+def run() -> None:
+    cli()

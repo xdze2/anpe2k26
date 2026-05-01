@@ -13,13 +13,32 @@ Run `enrich()` on a single node, see what the LLM produces, validate that the lo
 is useful. Every open design question gets answered by looking at real output, not
 by reasoning in the abstract.
 
+## Fetch tool registry
+
+Fetch methods are registered by slug in a single dict. The queue stores `(slug, target)`
+pairs; `enrich` dispatches to the right function at runtime.
+
+```python
+FETCH_TOOLS: dict[str, Callable[[str], str]] = {
+    "ddg":    ddg_search,    # DuckDuckGo text search via ddgs lib
+    # "siren":  siren_fetch, # SIRENE API — deferred
+    # "fetch":  http_fetch,  # raw HTTP GET — deferred
+    # "tavily": tavily_fetch, # Tavily advanced capture — deferred
+}
+```
+
+Each function has the same signature: `(target: str) -> str` — it receives the query
+or URL and returns raw text. Error handling (timeout, HTTP error, …) is the function's
+responsibility; it raises on failure so the caller can log and skip.
+
+Only `ddg` is implemented in the POC. Adding a new tool = adding one entry to the dict.
+
 ## The loop
 
 ```python
 # bootstrap — called once to initialize the node
 queue = [
-    (sirene_fetch, siren_id),
-    (ddg_search,   company_name),
+    ("ddg", company_name),
 ]
 
 def enrich():
@@ -27,11 +46,9 @@ def enrich():
     if next_target is None:
         return
 
-    return_code, data = tool_call(next_target)
-
-    if return_code == error:
-        log(error)
-        return
+    tool_slug, target = next_target
+    fetch_fn = FETCH_TOOLS[tool_slug]
+    data = fetch_fn(target)          # raises on error
 
     previous_summary = get_summary()
     status, new_summary, new_targets = llm_summarize(data, previous_summary)
@@ -42,7 +59,7 @@ def enrich():
 
     log("ok")
     save_summary(new_summary)
-    queue.put(new_targets)
+    queue.put(new_targets)           # new_targets: list[tuple[str, str]]
 ```
 
 ## `llm_summarize`
@@ -59,6 +76,16 @@ The profile slot replaces this string later. Nothing else changes.
 
 `new_targets` is a list of `(tool, url_or_query)` pairs the LLM identified as worth
 fetching next (e.g. a website URL found in DDG results, a LinkedIn page).
+
+## CLI commands (POC)
+
+```bash
+anpe add_target NODEID ddg KEYWORD   # append ("ddg", KEYWORD) to node's queue.jsonl
+anpe enrich NODEID                    # pop one item, fetch, llm_summarize, save
+```
+
+`enrich` runs **one step** so output can be inspected between cycles.
+`add_target` takes the tool slug explicitly — it must exist in `FETCH_TOOLS`.
 
 ## Storage
 
@@ -84,3 +111,4 @@ No `enrichment.jsonl` for now. Logging goes to stdout or a simple text log.
 - Multi-node / background worker
 - Agent integration
 - `enrichment.jsonl` audit log
+- Additional fetch tools: `siren`, `fetch` (raw HTTP), `tavily`, …

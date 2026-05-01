@@ -10,7 +10,11 @@ dependencies = [
     "pydantic-ai>=1.88.0",
     "pydantic-settings>=2.14.0",
     "pyyaml>=6.0.3",
+    "ddgs>=9.0.0",
 ]
+
+[tool.setuptools.packages.find]
+include = ["anpe*"]
 
 [tool.uv]
 package = true
