@@ -17,6 +17,7 @@ from rich.text import Text
 
 from anpe.agent import agent
 from anpe.config import settings
+from anpe.enrich.pipeline import enrich_step
 from anpe.enrich.registry import FETCH_TOOLS
 from anpe.node_dir import NodeDir
 
@@ -135,6 +136,31 @@ def add_target(node_id: str, tool: str, keyword: str) -> None:
     created = " [dim](created)[/]" if is_new else ""
     console.print(f" [dim]node[/] [bold]{node_id}[/]{created}")
     console.print(f" [dim]queued[/] [{tool}] {keyword}")
+
+
+@cli.command("enrich")
+@click.argument("node_id")
+def enrich(node_id: str) -> None:
+    """Run one enrichment step on a node.
+
+    Example: anpe enrich acme
+    """
+    log = asyncio.run(enrich_step(node_id))
+
+    status_style = {
+        "ok": "green",
+        "not_relevant": "red",
+        "no_data": "yellow",
+        "fetch_error": "red",
+        "empty_queue": "dim",
+    }.get(log.status, "white")
+
+    console.print(f" [dim]node[/]   [bold]{log.node_id}[/]")
+    if log.tool:
+        console.print(f" [dim]fetched[/] [{log.tool}] {log.target}")
+    console.print(f" [dim]status[/] [{status_style}]{log.status}[/]")
+    for tool, target in log.new_targets:
+        console.print(f" [dim]queued[/] [{tool}] {target}")
 
 
 def run() -> None:

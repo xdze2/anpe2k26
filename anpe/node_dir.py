@@ -83,6 +83,14 @@ class NodeDir:
             new_lines.append(json.dumps(data))
         self._queue_file.write_text("\n".join(new_lines) + "\n", encoding="utf-8")
 
+    def save_raw(self, tool: str, target: str, data: str) -> None:
+        if not self.path.exists():
+            self.init()
+        ts = datetime.now(timezone.utc).strftime("%Y%m%dT%H%M%S")
+        slug = target[:40].replace("/", "_").replace(" ", "_")
+        filename = f"raw_{tool}_{slug}_{ts}.txt"
+        (self.path / filename).write_text(data, encoding="utf-8")
+
     def get_summary(self) -> str:
         if not self._summary_file.exists():
             return ""
