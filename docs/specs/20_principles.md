@@ -4,30 +4,38 @@ status: draft
 
 # Principles
 
-High-level design. How the vision translates into a system.
+High-level design. How the vision translates into a system. what are the big components, how the interact. No detail.s
 
 ## Data vault
 
-All user data lives in a single directory, owned and controlled by the user (private user git repo). All as text files (markdown with frontmatter yaml, jsonl).
+All user data lives in a single directory, owned and controlled by the user (private user git repo).
 
-Two kinds of persistent state:
+It contains:
 
-**User search profile** (`search_profile.md`) — description of what the user is looking for:
-target roles, preferred company sizes, sectors, dealbreakers,...et
+- the user profile — what the user is looking for (target roles, preferred company sizes, sectors, dealbreakers,...etc)
+- Data about nodes (aka companies):
+  - fetched raw data
+  - fetched data log and status
+  - an information summary (one per node)
+- chat logs
 
-The agent reads it at startup and updates it as the user reacts to companies.
+## Node information summary
 
-[TBD] Updates are full rewrites, not appends — contradictions don't accumulate.
+Contains:
 
-**Company nodes** (`companies/node<SIREN>`) — one directory per candidate company. A node starts as a bare
-seed from SIRENE (aka the SIREN code) and grows as information is collected. It
-holds a human-readable summary of everything gathered so far, the user's triage verdict,
-and freeform notes. Raw source data is stored separately and never deleted — the summary
-view is always regenerable.
+- information relevant to the user about the node
+- next possible fetch target
+- gathering status: done, discared, pending
 
-## Enrichment: fetch → eval → summarize
+## Enrichment workflow: fetch → eval → summarize
 
-Every information fetch is followed by an LLM evaluation step, and summarization.
+Enrichment dispatcher `enrich_node(seed_id)`:
+
+- next_fetch_target(node_summary) -> (fetch_tool, uri)
+- fetch(fetch_tool, uri) -> raw_data, log fetch_status
+- eval(raw_data, user profile, [node_summary]) -> log eval status, new summary, rank_delta (mismatch between user rank and LLM perception)
+
+Evaluation step is done by a LLM.
 
 Raw data is never surfaced directly to the user, but stored for cache, replayability and debugging.
 
@@ -68,16 +76,6 @@ user has expressed interest.
 Each source has a fetch step and a paired eval step. Adding a new source always follows
 the same pattern; no structural changes needed.
 
-## Enrichment dispatcher
-
-One entry point: `enrich_company(node_id)`. From the current state of a node (read from
-the event log), it decides the next step to run, executes it, and appends the result.
-One step per call — the agent can report progress, ask the user whether to continue,
-and abort at any point.
-
-All enrichment events are appended to a JSONL log. This log is the single source of
-truth for enrichment state. It is append-only; nothing is ever deleted or overwritten.
-
 ## Triage
 
 Each company carries a user verdict:
@@ -93,6 +91,8 @@ The verdict is set by the user directly, or inferred by the agent from eval resu
 and the search profile. The agent proposes; the user confirms or corrects.
 
 ## Agent
+
+- A AI chat with an IA Agent is main user interface and interaction loop
 
 A conversational agent (pydantic-ai) glues the tools together and handles user input.
 Its tools are: read/write the search profile, read/update company nodes, and trigger
