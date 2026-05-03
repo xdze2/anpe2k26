@@ -1,22 +1,24 @@
+---
+status: draft
+---
 
 ### Source catalogue
 
 The pipeline MUST support the following steps in order:
 
-| Step | Source | Constraint |
-|---|---|---|
-| `sirene_fetch` | SIRENE API | always first |
-| `sirene_eval` | LLM (eval model) | base context for all subsequent evals |
-| `ddg_search` | DDG HTML scrape | free; first-pass for small French companies |
-| `ddg_eval` | LLM (eval model) | extracts candidate URL |
-| `website_fetch` | direct HTTP | fails on JS-heavy / Cloudflare sites |
-| `website_eval` | LLM (eval model) | activity summary + match verdict |
-| `tavily_search` | Tavily API | quota-gated; see constraints |
-| `tavily_eval` | LLM (eval model) | updated summary + verdict |
-
-
+| Step            | Source           | Constraint                                  |
+| --------------- | ---------------- | ------------------------------------------- |
+| `sirene_fetch`  | SIRENE API       | always first                                |
+| `sirene_eval`   | LLM (eval model) | base context for all subsequent evals       |
+| `ddg_search`    | DDG HTML scrape  | free; first-pass for small French companies |
+| `ddg_eval`      | LLM (eval model) | extracts candidate URL                      |
+| `website_fetch` | direct HTTP      | fails on JS-heavy / Cloudflare sites        |
+| `website_eval`  | LLM (eval model) | activity summary + match verdict            |
+| `tavily_search` | Tavily API       | quota-gated; see constraints                |
+| `tavily_eval`   | LLM (eval model) | updated summary + verdict                   |
 
 ## Sirene source
+
 ### Discovery
 
 - The system MUST query SIRENE by city, radius, and NAF codes and return a paginated
@@ -33,7 +35,6 @@ The pipeline MUST support the following steps in order:
 
 - SIRENE `/near_point` MUST NOT be called with `radius_km > 50` (API hard limit).
 
-
 ### Company data
 
 - Each company MUST have exactly one file: `companies/<siren>_<name_slug>.md`.
@@ -46,10 +47,8 @@ The pipeline MUST support the following steps in order:
 - `done` MUST be soft: enrichment can resume at any time if the user requests it.
 - The `## Notes` section of a company file MUST never be overwritten by the pipeline.
 
-
-
-
 ## Tavily source
+
 ## Constraints
 
 - Tavily MUST NOT be called during bulk discovery — only after the user has expressed

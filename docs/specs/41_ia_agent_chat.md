@@ -1,3 +1,6 @@
+---
+status: draft
+---
 
 ### Agent behaviour
 

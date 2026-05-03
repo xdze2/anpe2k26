@@ -1,5 +1,5 @@
 ---
-status: draft
+status: done
 ---
 
 # POC — Enrichment pipeline
@@ -70,7 +70,7 @@ summary, list of next targets to add to the queue.
 No user profile for now — the prompt includes a hardcoded intent to make the summary
 meaningful during testing:
 
-> *"We are looking for small French tech companies doing AI or software work."*
+> _"We are looking for small French tech companies doing AI or software work."_
 
 The profile slot replaces this string later. Nothing else changes.
 
@@ -144,7 +144,7 @@ readable by browsing the directory, and linked from the `summarize_done` event i
   "model": "openai/gpt-4o-mini",
   "status": "ok",
   "summary": "...",
-  "new_targets": [{"tool": "fetch", "target": "https://..."}]
+  "new_targets": [{ "tool": "fetch", "target": "https://..." }]
 }
 ```
 
