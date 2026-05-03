@@ -38,8 +38,6 @@ def _print_assistant(text: str) -> None:
 
 
 async def _chat_loop() -> None:
-    from anpe.agent import agent
-    from anpe.config import settings
     from prompt_toolkit import PromptSession
     from prompt_toolkit.formatted_text import HTML
     from pydantic_ai import AgentStreamEvent, FunctionToolCallEvent, RunContext
@@ -47,6 +45,9 @@ async def _chat_loop() -> None:
     from rich.console import Group
     from rich.live import Live
     from rich.spinner import Spinner
+
+    from anpe.agent import agent
+    from anpe.config import settings
 
     def _print_status(tokens_in: int, tokens_out: int) -> None:
         parts = Text()
@@ -161,8 +162,8 @@ def prospect_seed(count: int) -> None:
 
     Example: anpe prospect seed --count 5
     """
-    from anpe.prospect.seed import seed_from_listing
     from anpe.node_dir import USER_DATA_DIR
+    from anpe.prospect.seed import seed_from_listing
 
     csv_path = USER_DATA_DIR / "company_listing.csv"
     if not csv_path.exists():
@@ -178,6 +179,48 @@ def prospect_seed(count: int) -> None:
     for node_id in created:
         console.print(f" [green]created[/] [bold]{node_id}[/]")
     console.print(f"\n [dim]{len(created)} node(s) created.[/]")
+
+
+@prospect_group.command("run")
+@click.argument("node_ids", nargs=-1, metavar="[NODE_ID]...")
+@click.option("-n", "max_steps", default=1, show_default=True, help="Max steps per node.")
+@click.option("--all-nodes", is_flag=True, help="Run on all existing nodes.")
+def prospect_run(node_ids: tuple[str, ...], max_steps: int, all_nodes: bool) -> None:
+    """Run the prospect pipeline on nodes.
+
+    By default runs 1 step on the given nodes. Use --all-nodes to target all
+    existing nodes (sorted oldest first). Stops immediately if DDG is blocked.
+
+    Examples:
+      anpe prospect run chapsvision_851035329
+      anpe prospect run -n 5 chapsvision_851035329 incomm_479144438
+      anpe prospect run --all-nodes -n 3
+    """
+    from anpe.prospect.pipeline import _all_node_ids_by_ctime, run_batch
+
+    if node_ids and all_nodes:
+        raise click.UsageError("NODE_IDs and --all-nodes are mutually exclusive.")
+
+    if all_nodes:
+        ids = _all_node_ids_by_ctime()
+    elif node_ids:
+        ids = list(node_ids)
+    else:
+        raise click.UsageError("Provide NODE_ID(s) or --all-nodes.")
+
+    missing = [nid for nid in ids if not NodeDir(nid).exists()]
+    if missing:
+        for nid in missing:
+            console.print(f" [bold red]Error[/] node {nid!r} not found")
+        return
+
+    async def _run() -> None:
+        async for log in run_batch(ids, max_steps):
+            _print_step_log(log)
+            if log.status == "blocked":
+                console.print(" [bold red]blocked[/] — stopping run")
+
+    asyncio.run(_run())
 
 
 @prospect_group.command("add_target")
@@ -295,8 +338,9 @@ def bootstrap_run(refresh: bool) -> None:
     Writes output to user_data/company_listing.csv.
     Re-running is safe — cache is reused unless --refresh is passed.
     """
-    from pathlib import Path
     import logging
+    from pathlib import Path
+
     from anpe.bootstrap.pipeline import run as bootstrap_pipeline
 
     logging.basicConfig(level=logging.INFO, format="%(message)s")

@@ -3,14 +3,15 @@
 from __future__ import annotations
 
 import time
+from collections.abc import AsyncGenerator
 from dataclasses import dataclass, field
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 
 from anpe.config import settings
+from anpe.node_dir import NODES_DIR, FetchEntry, NodeDir
 from anpe.prospect.errors import FetchBlockedError, FetchNotFoundError, FetchRetryableError
 from anpe.prospect.registry import FETCH_TOOLS
 from anpe.prospect.summarize import llm_summarize
-from anpe.node_dir import FetchEntry, NodeDir
 
 
 @dataclass
@@ -100,7 +101,7 @@ async def _run_process(node: NodeDir, entry: FetchEntry, raw_data: str) -> StepL
     try:
         t0 = time.monotonic()
         if tool.capture_prompt:
-            ts = datetime.now(timezone.utc).strftime("%Y%m%dT%H%M%S")
+            ts = datetime.now(UTC).strftime("%Y%m%dT%H%M%S")
             prompt_file = node.prompt_file_path(entry, ts)
             result = await llm_summarize(raw_data, previous_summary, prompt_file=prompt_file)
         else:
@@ -159,3 +160,26 @@ def _fetch(entry: FetchEntry) -> tuple[str, None, None] | tuple[None, str, str]:
         return None, str(e), "blocked"
     except Exception as e:
         return None, str(e), "fetch_error"
+
+
+def _all_node_ids_by_ctime() -> list[str]:
+    """Return all node ids sorted by directory creation time (oldest first)."""
+    dirs = sorted(NODES_DIR.iterdir(), key=lambda p: p.stat().st_ctime)
+    return [p.name for p in dirs if p.is_dir()]
+
+
+async def run_batch(
+    node_ids: list[str],
+    max_steps: int,
+) -> AsyncGenerator[StepLog, None]:
+    """Run up to max_steps per node, depth-first. Stops the entire run on blocked."""
+    for node_id in node_ids:
+        steps_done = 0
+        while steps_done < max_steps:
+            log = await enrich_step(node_id)
+            yield log
+            steps_done += 1
+            if log.status == "blocked":
+                return
+            if log.status in ("empty_queue", "not_found"):
+                break
