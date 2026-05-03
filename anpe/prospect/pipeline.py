@@ -1,4 +1,17 @@
-"""One step of the enrichment loop."""
+"""Enrichment pipeline — one fetch→eval cycle per call.
+
+State machine (per uid in fetch.jsonl):
+
+    put ──fetch──► fetch_done ──summarize──► summarize_done  (ok | no_data)
+         │                   │                   └─ enqueues new_targets
+         │                   └────────────► summarize_done  (not_relevant)
+         │                                      └─ no new_targets enqueued
+         ▼
+    fetch_error | not_found | blocked | retryable   [terminal / manual retry]
+
+summarize_error is a retryable state: pop_pending will pick it up again
+(fetch is skipped — raw data already on disk).
+"""
 
 from __future__ import annotations
 
@@ -132,10 +145,6 @@ async def _run_process(node: NodeDir, entry: FetchEntry, raw_data: str) -> StepL
     )
 
     if result.status == "not_relevant":
-        # Still enqueue any retry targets the LLM proposed (refined queries).
-        for tool_slug, target in new_targets:
-            if tool_slug in FETCH_TOOLS:
-                node.append_target(tool_slug, target)
         return StepLog(node_id=node.node_id, tool=entry.tool, target=entry.target,
                        status="not_relevant", new_targets=new_targets)
 
