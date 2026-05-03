@@ -73,8 +73,8 @@ def make_agent(model_slug: str) -> Agent:
     model = OpenAIChatModel(
         model_slug,
         provider=OpenAIProvider(
-            base_url=settings.openrouter_base_url,
-            api_key=settings.openrouter_api_key,
+            base_url=settings.mistral_base_url,
+            api_key=settings.mistral_api_key,
         ),
     )
     return Agent(model, output_type=EnrichResult, system_prompt=_SYSTEM)

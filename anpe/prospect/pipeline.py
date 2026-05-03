@@ -120,13 +120,13 @@ async def _run_process(node: NodeDir, entry: FetchEntry, raw_data: str) -> StepL
     new_targets = [(t.tool, t.target) for t in result.new_targets]
     result_file = node.save_summarize_result(
         entry=entry,
-        model=settings.openrouter_model,
+        model=settings.mistral_model,
         status=result.status,
         summary=result.summary,
         new_targets=new_targets,
         duration_s=duration_s,
     )
-    node.mark_summarize_done(entry, model=settings.openrouter_model, status=result.status, result_file=result_file)
+    node.mark_summarize_done(entry, model=settings.mistral_model, status=result.status, result_file=result_file)
 
     if result.status == "not_relevant":
         # Still enqueue any retry targets the LLM proposed (refined queries).

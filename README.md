@@ -1,7 +1,7 @@
 # ANPE-2k26
 
 Personal job-search assistant for discovering companies you don't know exist yet.
-Built with [pydantic-ai](https://ai.pydantic.dev/) and [OpenRouter](https://openrouter.ai/).
+Built with [pydantic-ai](https://ai.pydantic.dev/) and [Mistral AI](https://mistral.ai/).
 
 ## Quickstart
 
@@ -11,7 +11,7 @@ Requires [uv](https://docs.astral.sh/uv/).
 git clone <repo-url>
 cd anpe2k26
 uv sync
-cp .env.example .env   # then add your OPENROUTER_API_KEY
+cp .env.example .env   # then add your MISTRAL_API_KEY
 ```
 
 ## Usage

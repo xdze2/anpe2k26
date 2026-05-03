@@ -7,10 +7,10 @@ from anpe.profile import profile_system_prompt, read_profile, write_profile
 from anpe.tools.naf import register_naf_tools
 
 _model = OpenAIChatModel(
-    settings.openrouter_model,
+    settings.mistral_model,
     provider=OpenAIProvider(
-        base_url=settings.openrouter_base_url,
-        api_key=settings.openrouter_api_key,
+        base_url=settings.mistral_base_url,
+        api_key=settings.mistral_api_key,
     ),
 )
 

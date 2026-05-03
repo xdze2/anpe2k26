@@ -53,7 +53,7 @@ async def _chat_loop() -> None:
         parts = Text()
         parts.append(f" {tokens_in} → {tokens_out} tokens", style="dim")
         parts.append("   ", style="dim")
-        parts.append(settings.openrouter_model, style="dim")
+        parts.append(settings.mistral_model, style="dim")
         console.print(parts)
         console.print()
 

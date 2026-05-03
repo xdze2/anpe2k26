@@ -58,10 +58,10 @@ class EnrichResult(BaseModel):
 
 
 _model = OpenAIChatModel(
-    settings.openrouter_model,
+    settings.mistral_model,
     provider=OpenAIProvider(
-        base_url=settings.openrouter_base_url,
-        api_key=settings.openrouter_api_key,
+        base_url=settings.mistral_base_url,
+        api_key=settings.mistral_api_key,
     ),
 )
 
@@ -93,7 +93,7 @@ async def llm_summarize(
             msg = str(e)
             if "402" in msg:
                 raise LLMCreditsError(
-                    "No LLM credits — top up at https://openrouter.ai/settings/credits"
+                    "No LLM credits — top up at https://console.mistral.ai/"
                 ) from e
             if "429" in msg:
                 delay = _RETRY_BASE_DELAY * (2 ** attempt)
