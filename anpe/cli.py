@@ -183,30 +183,40 @@ def prospect_seed(count: int) -> None:
 
 @prospect_group.command("run")
 @click.argument("node_ids", nargs=-1, metavar="[NODE_ID]...")
-@click.option("-n", "max_steps", default=1, show_default=True, help="Max steps per node.")
+@click.option("-n", "budget", default=1, show_default=True,
+              help="Total step budget across all nodes.")
 @click.option("--all-nodes", is_flag=True, help="Run on all existing nodes.")
-def prospect_run(node_ids: tuple[str, ...], max_steps: int, all_nodes: bool) -> None:
-    """Run the prospect pipeline on nodes.
-
-    By default runs 1 step on the given nodes. Use --all-nodes to target all
-    existing nodes (sorted oldest first). Stops immediately if DDG is blocked.
+@click.option("--until-done", is_flag=True,
+              help="Run until all queues empty (ignores -n). Use with caution.")
+def prospect_run(
+    node_ids: tuple[str, ...], budget: int, all_nodes: bool, until_done: bool
+) -> None:
+    """Run the prospect pipeline on nodes (depth-first, total step budget).
 
     Examples:
-      anpe prospect run chapsvision_851035329
+      anpe prospect run chapsvision_851035329          # 1 step (default)
+      anpe prospect run -n 10                          # 10 steps, all nodes
       anpe prospect run -n 5 chapsvision_851035329 incomm_479144438
-      anpe prospect run --all-nodes -n 3
+      anpe prospect run --all-nodes -n 10
+      anpe prospect run --all-nodes --until-done
     """
     from anpe.prospect.pipeline import _all_node_ids_by_ctime, run_batch
 
     if node_ids and all_nodes:
         raise click.UsageError("NODE_IDs and --all-nodes are mutually exclusive.")
+    if until_done and budget != 1:
+        raise click.UsageError("-n and --until-done are mutually exclusive.")
 
     if all_nodes:
         ids = _all_node_ids_by_ctime()
     elif node_ids:
         ids = list(node_ids)
     else:
-        raise click.UsageError("Provide NODE_ID(s) or --all-nodes.")
+        ids = _all_node_ids_by_ctime()
+
+    if not ids:
+        console.print(" [dim]No nodes found.[/]")
+        return
 
     missing = [nid for nid in ids if not NodeDir(nid).exists()]
     if missing:
@@ -214,8 +224,10 @@ def prospect_run(node_ids: tuple[str, ...], max_steps: int, all_nodes: bool) -> 
             console.print(f" [bold red]Error[/] node {nid!r} not found")
         return
 
+    effective_budget = None if until_done else budget
+
     async def _run() -> None:
-        async for log in run_batch(ids, max_steps):
+        async for log in run_batch(ids, effective_budget):
             _print_step_log(log)
             if log.status == "blocked":
                 console.print(" [bold red]blocked[/] — stopping run")

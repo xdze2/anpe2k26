@@ -170,16 +170,23 @@ def _all_node_ids_by_ctime() -> list[str]:
 
 async def run_batch(
     node_ids: list[str],
-    max_steps: int,
+    budget: int | None,
 ) -> AsyncGenerator[StepLog, None]:
-    """Run up to max_steps per node, depth-first. Stops the entire run on blocked."""
+    """Run nodes depth-first.
+
+    budget: total steps across all nodes (None = unlimited).
+    Stops immediately on blocked.
+    """
+    budget_remaining = budget
     for node_id in node_ids:
-        steps_done = 0
-        while steps_done < max_steps:
+        while True:
             log = await enrich_step(node_id)
             yield log
-            steps_done += 1
             if log.status == "blocked":
                 return
             if log.status in ("empty_queue", "not_found"):
                 break
+            if budget_remaining is not None:
+                budget_remaining -= 1
+                if budget_remaining <= 0:
+                    return
