@@ -75,6 +75,7 @@ class EnrichResult(BaseModel):
     status: str  # "ok" | "not_relevant" | "no_data"
     summary: str
     new_targets: list[FetchTarget]
+    frontmatter: dict = {}  # type: ignore[type-arg]  # structured fields to merge into summary.md
 
 
 _model = MistralModel(

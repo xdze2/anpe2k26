@@ -108,7 +108,7 @@ async def _run_process(node: NodeDir, entry: FetchEntry, raw_data: str) -> StepL
         return StepLog(node_id=node.node_id, tool=entry.tool, target=entry.target,
                        status="summarize_error")
 
-    previous_summary = node.get_summary()
+    previous_summary = node.get_summary_body()
     print(f"[{node.node_id}] process  [{entry.tool}]  (previous: {len(previous_summary)} chars)")
 
     try:
@@ -116,7 +116,12 @@ async def _run_process(node: NodeDir, entry: FetchEntry, raw_data: str) -> StepL
         if tool.capture_prompt:
             ts = datetime.now(UTC).strftime("%Y%m%dT%H%M%S")
             prompt_file = node.prompt_file_path(entry, ts)
-            result = await llm_summarize(raw_data, previous_summary, prompt_file=prompt_file)
+            company_profile = _fmt_company_profile(node.get_frontmatter())
+            result = await llm_summarize(
+                raw_data, previous_summary,
+                company_profile=company_profile,
+                prompt_file=prompt_file,
+            )
         else:
             result = await tool.process(raw_data, previous_summary)
         duration_s = round(time.monotonic() - t0, 2)
@@ -143,6 +148,9 @@ async def _run_process(node: NodeDir, entry: FetchEntry, raw_data: str) -> StepL
         entry, model=settings.mistral_model, status=result.status,
         result_file=result_file, prompt_version=PROMPT_VERSION,
     )
+
+    if result.frontmatter:
+        node.set_frontmatter(result.frontmatter)
 
     if result.status == "not_relevant":
         return StepLog(node_id=node.node_id, tool=entry.tool, target=entry.target,
@@ -172,6 +180,13 @@ def _fetch(entry: FetchEntry) -> tuple[str, None, None] | tuple[None, str, str]:
         return None, str(e), "blocked"
     except Exception as e:
         return None, str(e), "fetch_error"
+
+
+def _fmt_company_profile(fm: dict) -> str:  # type: ignore[type-arg]
+    """Format frontmatter fields as the 'Company profile' block for the LLM prompt."""
+    keys = ["name", "siren", "naf", "category", "headcount", "city"]
+    lines = [f"{k.capitalize()}: {fm[k]}" for k in keys if k in fm]
+    return "\n".join(lines)
 
 
 def _all_node_ids_by_ctime() -> list[str]:

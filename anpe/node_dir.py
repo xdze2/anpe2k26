@@ -209,15 +209,70 @@ class NodeDir:
         return filename
 
     # ------------------------------------------------------------------
-    # Summary
+    # Summary (frontmatter + body)
     # ------------------------------------------------------------------
 
-    def get_summary(self) -> str:
+    @staticmethod
+    def _split_frontmatter(text: str) -> tuple[str, str]:
+        """Split '---\\n...\\n---\\nbody' into (frontmatter_block, body).
+
+        Returns ("", text) if no frontmatter is present.
+        """
+        if not text.startswith("---\n"):
+            return "", text
+        end = text.find("\n---\n", 4)
+        if end == -1:
+            return "", text
+        return text[4:end], text[end + 5:]
+
+    def get_frontmatter(self) -> dict:  # type: ignore[type-arg]
+        """Return parsed YAML frontmatter, or {} if none."""
+        import yaml
+        if not self._summary_file.exists():
+            return {}
+        raw = self._summary_file.read_text(encoding="utf-8")
+        fm, _ = self._split_frontmatter(raw)
+        return yaml.safe_load(fm) or {} if fm else {}
+
+    def set_frontmatter(self, data: dict) -> None:  # type: ignore[type-arg]
+        """Merge data into frontmatter, preserving the existing body."""
+        import yaml
+        if self._summary_file.exists():
+            raw = self._summary_file.read_text(encoding="utf-8")
+            existing_fm, body = self._split_frontmatter(raw)
+            current = yaml.safe_load(existing_fm) or {} if existing_fm else {}
+        else:
+            current, body = {}, ""
+        current.update(data)
+        self._write_summary(current, body)
+
+    def get_summary_body(self) -> str:
+        """Return only the markdown body (no frontmatter)."""
         if not self._summary_file.exists():
             return ""
-        return self._summary_file.read_text(encoding="utf-8")
+        raw = self._summary_file.read_text(encoding="utf-8")
+        _, body = self._split_frontmatter(raw)
+        return body
 
-    def save_summary(self, text: str) -> None:
+    def save_summary(self, body: str) -> None:
+        """Overwrite the body, preserving existing frontmatter."""
+        import yaml
+        if self._summary_file.exists():
+            raw = self._summary_file.read_text(encoding="utf-8")
+            existing_fm, _ = self._split_frontmatter(raw)
+            fm = yaml.safe_load(existing_fm) or {} if existing_fm else {}
+        else:
+            fm = {}
         if not self.path.exists():
             self.init()
+        self._write_summary(fm, body)
+
+    def _write_summary(self, fm: dict, body: str) -> None:  # type: ignore[type-arg]
+        import yaml
+        if not self.path.exists():
+            self.init()
+        if fm:
+            text = f"---\n{yaml.dump(fm, allow_unicode=True, sort_keys=False)}---\n{body}"
+        else:
+            text = body
         self._summary_file.write_text(text, encoding="utf-8")

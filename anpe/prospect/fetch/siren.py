@@ -21,7 +21,7 @@ _HEADCOUNT_BANDS: dict[str, str] = {
 
 
 async def siren_process(raw_data: str, previous_summary: str) -> EnrichResult:
-    """Format Recherche Entreprises JSON into a structured summary and propose a DDG follow-up."""
+    """Extract registry fields into frontmatter and propose a DDG follow-up."""
     r = json.loads(raw_data)
     siege = r.get("siege", {})
 
@@ -30,64 +30,36 @@ async def siren_process(raw_data: str, previous_summary: str) -> EnrichResult:
     siren = r.get("siren", "")
     naf_code = r.get("activite_principale", "")
     naf_label = _naf_index().get(naf_code, "")
-    naf = f"{naf_code} — {naf_label}" if naf_label else naf_code
     category = r.get("categorie_entreprise", "")
     size_code = r.get("tranche_effectif_salarie", "")
-    size = _HEADCOUNT_BANDS.get(size_code, size_code) if size_code else ""
-    creation_date = r.get("date_creation", "")
-    etat = r.get("etat_administratif", "")
-    address = siege.get("geo_adresse", "") or siege.get("adresse", "")
+    city = siege.get("libelle_commune", "") or siege.get("commune", "")
 
-    dirigeants = r.get("dirigeants", [])
-    ceo = next(
-        (f"{d.get('prenoms', '')} {d.get('nom', '')}".strip()
-         for d in dirigeants
-         if d.get("type_dirigeant") == "personne physique"
-         and "directeur" in d.get("qualite", "").lower()),
-        None,
-    )
-
-    finances = r.get("finances", {})
-    latest_year = max(finances.keys(), default=None) if finances else None
-    revenue = finances[latest_year].get("ca") if latest_year else None
-    net_result = finances[latest_year].get("resultat_net") if latest_year else None
-
-    lines = ["## SIREN data\n"]
-    if nom_commercial and nom_commercial != nom_legal:
-        lines.append(f"**Name:** {nom_commercial} ({nom_legal})")
-    elif nom_legal:
-        lines.append(f"**Name:** {nom_legal}")
+    fm: dict = {}  # type: ignore[type-arg]
     if siren:
-        lines.append(f"**SIREN:** {siren}")
-    if naf:
-        lines.append(f"**NAF:** {naf}")
+        fm["siren"] = siren
+    if nom_commercial:
+        fm["name"] = nom_commercial
+    if nom_commercial != nom_legal and nom_legal:
+        fm["name_legal"] = nom_legal
+    if naf_code:
+        fm["naf"] = f"{naf_code} — {naf_label}" if naf_label else naf_code
     if category:
-        lines.append(f"**Category:** {category}")
-    if size:
-        lines.append(f"**Headcount:** {size} employees")
-    if revenue is not None:
-        lines.append(f"**Revenue ({latest_year}):** {revenue / 1_000_000:.1f}M€")
-    if net_result is not None:
-        lines.append(f"**Net result ({latest_year}):** {net_result / 1_000_000:.2f}M€")
-    if ceo:
-        lines.append(f"**CEO:** {ceo}")
-    if creation_date:
-        lines.append(f"**Created:** {creation_date}")
-    if etat:
-        lines.append(f"**Status:** {etat}")
-    if address:
-        lines.append(f"**Address:** {address}")
-
-    summary = "\n".join(lines)
-    if previous_summary:
-        summary = previous_summary + "\n\n" + summary
+        fm["category"] = category
+    if size_code:
+        fm["headcount"] = _HEADCOUNT_BANDS.get(size_code, size_code)
+    if city:
+        fm["city"] = city
 
     search_name = nom_commercial or nom_legal
     new_targets: list[FetchTarget] = []
     if search_name:
         naf_section = r.get("section_activite_principale", "")
-        # Add sector context to avoid ambiguous queries (e.g. "SMILE" → dictionary results)
         suffix = " entreprise informatique" if naf_section == "J" else " entreprise"
         new_targets.append(FetchTarget(tool="ddg", target=search_name + suffix))
 
-    return EnrichResult(status="ok", summary=summary, new_targets=new_targets)
+    return EnrichResult(
+        status="ok",
+        summary=previous_summary,
+        new_targets=new_targets,
+        frontmatter=fm,
+    )
