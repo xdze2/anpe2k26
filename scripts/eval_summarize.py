@@ -18,12 +18,11 @@ from pydantic_ai.models.openai import OpenAIChatModel
 from pydantic_ai.providers.openai import OpenAIProvider
 
 from anpe.config import settings
-from anpe.enrich.summarize import _SYSTEM, EnrichResult
+from anpe.prospect.summarize import _SYSTEM, EnrichResult
 
 MODELS = [
-    "google/gemma-4-26b-a4b-it:free",     # small — 26B MoE, only 3.8B active
-    "google/gemma-4-31b-it:free",
-    "nvidia/nemotron-3-super-120b-a12b:free",
+    "ministral-8b-2512",
+    "mistral-small-2603",
 ]
 
 CALL_DELAY_S = 3.0  # pause between API calls to stay within per-minute rate limits
@@ -81,7 +80,9 @@ def make_agent(model_slug: str) -> Agent:
     return Agent(model, output_type=EnrichResult, system_prompt=_SYSTEM)
 
 
-async def run_one(agent: Agent, raw_data: str, previous_summary: str) -> tuple[EnrichResult, float]:
+async def run_one(
+    agent: Agent, raw_data: str, previous_summary: str
+) -> tuple[EnrichResult, float]:
     prompt = ""
     if previous_summary:
         prompt += f"## Previous summary\n\n{previous_summary}\n\n"
@@ -108,7 +109,9 @@ async def main() -> None:
                 print(f"\n  model: {model_slug}")
                 agent = make_agent(model_slug)
                 try:
-                    result, elapsed = await run_one(agent, raw_data, fixture["previous_summary"])
+                    result, elapsed = await run_one(
+                        agent, raw_data, fixture["previous_summary"]
+                    )
                     row = {
                         "fixture": fixture["id"],
                         "model": model_slug,
@@ -119,8 +122,10 @@ async def main() -> None:
                         "summary": result.summary,
                         "error": None,
                     }
-                    print(f"    status={result.status}  targets={len(result.new_targets)}  "
-                          f"summary_len={len(result.summary)}  elapsed={elapsed:.1f}s")
+                    print(
+                        f"    status={result.status}  targets={len(result.new_targets)}  "
+                        f"summary_len={len(result.summary)}  elapsed={elapsed:.1f}s"
+                    )
                     for t in result.new_targets:
                         print(f"      -> [{t.tool}] {t.target}")
                 except Exception as e:
