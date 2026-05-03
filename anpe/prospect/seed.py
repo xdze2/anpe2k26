@@ -36,6 +36,7 @@ def seed_from_listing(csv_path: Path, count: int) -> list[str]:
     created = []
     for row in to_create:
         node = NodeDir(row["node_id"])
+        node.init()
         node.append_target("ddg", f"{row['nom_complet']} {row['siren']}")
         created.append(row["node_id"])
 

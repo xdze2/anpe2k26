@@ -61,8 +61,6 @@ class NodeDir:
 
     def append_target(self, tool: str, target: str) -> str:
         """Append a put event to the fetch log. Returns the new uid."""
-        if not self.path.exists():
-            self.init()
         uid = _uid()
         self._append_fetch_event(
             {"event": "put", "uid": uid, "tool": tool, "target": target, "ts": _now()}

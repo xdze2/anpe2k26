@@ -196,10 +196,11 @@ def add_target(node_id: str, tool: str, keyword: str) -> None:
             f"must be one of {list(FETCH_TOOLS)}", param_hint="TOOL"
         )
     node = NodeDir(node_id)
-    is_new = not node.exists()
+    if not node.exists():
+        console.print(f" [bold red]Error[/] node {node_id!r} not found — use 'prospect seed' to create nodes")
+        return
     node.append_target(tool, keyword)
-    created = " [dim](created)[/]" if is_new else ""
-    console.print(f" [dim]node[/] [bold]{node_id}[/]{created}")
+    console.print(f" [dim]node[/] [bold]{node_id}[/]")
     console.print(f" [dim]queued[/] [{tool}] {keyword}")
 
 
