@@ -241,5 +241,42 @@ def summarize(node_id: str, fetch_uid: str | None) -> None:
     _print_step_log(log)
 
 
+@cli.group("bootstrap")
+def bootstrap_group() -> None:
+    """Generate company listing from SIRENE API."""
+
+
+@bootstrap_group.command("run")
+@click.option("--refresh", is_flag=True, default=False, help="Invalidate cache and re-fetch all pairs.")
+def bootstrap_run(refresh: bool) -> None:
+    """Build user_data/company_listing.csv from user_profile.yaml.
+
+    Reads user_data/user_profile.yaml from the project root.
+    Writes output to user_data/company_listing.csv.
+    Re-running is safe — cache is reused unless --refresh is passed.
+    """
+    from pathlib import Path
+    import logging
+    from anpe.bootstrap.pipeline import run as bootstrap_pipeline
+
+    logging.basicConfig(level=logging.INFO, format="%(message)s")
+
+    root = Path.cwd()
+    profile_path = root / "user_data" / "user_profile.yaml"
+    output_path = root / "user_data" / "company_listing.csv"
+    cache_dir = root / "cache_data" / "bootstrap_cache"
+
+    if not profile_path.exists():
+        raise click.ClickException(f"user_profile.yaml not found at {profile_path}")
+
+    console.print(f" [dim]profile[/] {profile_path}")
+    console.print(f" [dim]output[/]  {output_path}")
+    if refresh:
+        console.print(" [yellow]--refresh: cache will be invalidated[/]")
+
+    count = bootstrap_pipeline(profile_path, output_path, cache_dir, refresh=refresh)
+    console.print(f" [bold green]✓[/] {count} companies written to {output_path}")
+
+
 def run() -> None:
     cli()

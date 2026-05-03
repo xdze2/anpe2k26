@@ -28,6 +28,7 @@ htmlcov/
 
 # user data (personal, not committed)
 user_data/
+cache_data/
 
 # editors
 .vscode/

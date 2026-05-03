@@ -20,7 +20,7 @@ and company size.
 anpe bootstrap run
 ```
 
-No path options. Reads `user_profile.yaml` from the project root, writes output to
+No path options. Reads `user_data/user_profile.yaml`, writes output to
 `user_data/company_listing.csv`. Running it again is safe — the API cache is reused,
 only the distance filtering and CSV writing are repeated.
 
