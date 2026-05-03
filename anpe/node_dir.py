@@ -132,10 +132,13 @@ class NodeDir:
             {"event": "fetch_error", "uid": entry.uid, "detail": detail, "ts": _now()}
         )
 
-    def mark_summarize_done(self, entry: FetchEntry, model: str, status: str, result_file: str) -> None:
+    def mark_summarize_done(
+        self, entry: FetchEntry, model: str, status: str, result_file: str, prompt_version: str = ""
+    ) -> None:
         self._append_fetch_event(
             {"event": "summarize_done", "uid": entry.uid,
-             "model": model, "status": status, "result_file": result_file, "ts": _now()}
+             "model": model, "prompt_version": prompt_version,
+             "status": status, "result_file": result_file, "ts": _now()}
         )
 
     def mark_summarize_error(self, entry: FetchEntry, detail: str) -> None:

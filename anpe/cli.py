@@ -152,6 +152,70 @@ def _print_step_log(log: StepLog) -> None:
         console.print(f" [dim]queued[/] [{tool}] {target}")
 
 
+@prospect_group.command("list")
+def prospect_list() -> None:
+    """List all prospect nodes with their current state.
+
+    Example: anpe prospect list
+    """
+    from anpe.prospect.pipeline import _all_node_ids_by_ctime
+
+    ids = _all_node_ids_by_ctime()
+    if not ids:
+        console.print(" [dim]No nodes found.[/]")
+        return
+
+    _STATUS_STYLE = {
+        "put": "yellow",
+        "fetch_done": "cyan",
+        "fetch_error": "red",
+        "not_found": "red",
+        "retryable": "yellow",
+        "blocked": "red",
+        "summarize_done": "green",
+        "summarize_error": "red",
+    }
+
+    for node_id in ids:
+        node = NodeDir(node_id)
+        rows = node.get_fetch_history()
+
+        # Count pending targets
+        pending = sum(
+            1 for r in rows if r["last_event"] in ("put", "summarize_error")
+        )
+
+        # Find the most recent summarize_done event for model/prompt_version
+        model_tag = ""
+        for ev in reversed(node._load_fetch_events()):
+            if ev["event"] == "summarize_done":
+                m = ev.get("model", "")
+                pv = ev.get("prompt_version", "")
+                model_tag = f"  [dim]{m}"
+                if pv:
+                    model_tag += f" p:{pv}"
+                model_tag += "[/]"
+                break
+
+        # Overall state: last event type across all uids
+        last_event = rows[-1]["last_event"] if rows else "empty"
+        style = _STATUS_STYLE.get(last_event, "white")
+
+        # First line of summary as context
+        summary_hint = ""
+        summary = node.get_summary()
+        if summary:
+            first_line = summary.strip().splitlines()[0].lstrip("#").strip()
+            summary_hint = f"  [dim]{first_line[:60]}[/]"
+
+        pending_tag = f"  [yellow]{pending} pending[/]" if pending else ""
+
+        console.print(
+            f" [bold]{node_id}[/]  [{style}]{last_event}[/]"
+            f"{pending_tag}{model_tag}{summary_hint}"
+        )
+
+
 @prospect_group.command("seed")
 @click.option("--count", default=10, show_default=True, help="Number of new nodes to create.")
 def prospect_seed(count: int) -> None:

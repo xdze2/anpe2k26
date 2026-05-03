@@ -11,7 +11,7 @@ from anpe.config import settings
 from anpe.node_dir import NODES_DIR, FetchEntry, NodeDir
 from anpe.prospect.errors import FetchBlockedError, FetchNotFoundError, FetchRetryableError
 from anpe.prospect.registry import FETCH_TOOLS
-from anpe.prospect.summarize import llm_summarize
+from anpe.prospect.summarize import PROMPT_VERSION, llm_summarize
 
 
 @dataclass
@@ -126,7 +126,10 @@ async def _run_process(node: NodeDir, entry: FetchEntry, raw_data: str) -> StepL
         new_targets=new_targets,
         duration_s=duration_s,
     )
-    node.mark_summarize_done(entry, model=settings.mistral_model, status=result.status, result_file=result_file)
+    node.mark_summarize_done(
+        entry, model=settings.mistral_model, status=result.status,
+        result_file=result_file, prompt_version=PROMPT_VERSION,
+    )
 
     if result.status == "not_relevant":
         # Still enqueue any retry targets the LLM proposed (refined queries).

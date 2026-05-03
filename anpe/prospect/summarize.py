@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import asyncio
+import hashlib
 from pathlib import Path
 
 from pydantic import BaseModel
@@ -54,6 +55,8 @@ Rules:
 - summary: markdown, under 300 words, synthesize don't accumulate. English.
   Do not repeat information already in the Company profile block.
 """
+
+PROMPT_VERSION = hashlib.sha1(_SYSTEM.encode()).hexdigest()[:6]
 
 MAX_RETRIES = 3
 _RETRY_BASE_DELAY = 5.0  # seconds, doubles each attempt
