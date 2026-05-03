@@ -10,12 +10,13 @@ Results are printed to stdout and saved to scripts/eval_results/<timestamp>.json
 import asyncio
 import json
 import time
+import traceback
 from datetime import datetime
 from pathlib import Path
 
 from pydantic_ai import Agent
-from pydantic_ai.models.openai import OpenAIChatModel
-from pydantic_ai.providers.openai import OpenAIProvider
+from pydantic_ai.models.mistral import MistralModel
+from pydantic_ai.providers.mistral import MistralProvider
 
 from anpe.config import settings
 from anpe.prospect.summarize import _SYSTEM, EnrichResult
@@ -23,6 +24,8 @@ from anpe.prospect.summarize import _SYSTEM, EnrichResult
 MODELS = [
     "ministral-8b-2512",
     "mistral-small-2603",
+    "ministral-14b-2512",
+    "mistral-medium-2604",
 ]
 
 CALL_DELAY_S = 3.0  # pause between API calls to stay within per-minute rate limits
@@ -70,12 +73,9 @@ FIXTURES = [
 
 
 def make_agent(model_slug: str) -> Agent:
-    model = OpenAIChatModel(
+    model = MistralModel(
         model_slug,
-        provider=OpenAIProvider(
-            base_url=settings.mistral_base_url,
-            api_key=settings.mistral_api_key,
-        ),
+        provider=MistralProvider(api_key=settings.mistral_api_key),
     )
     return Agent(model, output_type=EnrichResult, system_prompt=_SYSTEM)
 
@@ -128,7 +128,8 @@ async def main() -> None:
                     )
                     for t in result.new_targets:
                         print(f"      -> [{t.tool}] {t.target}")
-                except Exception as e:
+                except Exception:
+                    error_msg = traceback.format_exc()
                     row = {
                         "fixture": fixture["id"],
                         "model": model_slug,
@@ -137,9 +138,9 @@ async def main() -> None:
                         "summary_len": 0,
                         "elapsed_s": None,
                         "summary": "",
-                        "error": str(e),
+                        "error": error_msg,
                     }
-                    print(f"    ERROR: {e}")
+                    print(f"    ERROR: {error_msg}")
 
                 f.write(json.dumps(row, ensure_ascii=False) + "\n")
                 f.flush()

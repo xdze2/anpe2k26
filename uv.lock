@@ -164,6 +164,7 @@ dependencies = [
     { name = "httpx" },
     { name = "openai" },
     { name = "pydantic-ai" },
+    { name = "pydantic-ai-slim", extra = ["mistral"] },
     { name = "pydantic-settings" },
     { name = "pyyaml" },
 ]
@@ -183,6 +184,7 @@ requires-dist = [
     { name = "httpx", specifier = ">=0.28.1" },
     { name = "openai", specifier = ">=2.33.0" },
     { name = "pydantic-ai", specifier = ">=1.88.0" },
+    { name = "pydantic-ai-slim", extras = ["mistral"], specifier = ">=1.88.0" },
     { name = "pydantic-settings", specifier = ">=2.14.0" },
     { name = "pyyaml", specifier = ">=6.0.3" },
 ]
