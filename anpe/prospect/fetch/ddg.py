@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from ddgs import DDGS
 
-from anpe.enrich.errors import FetchNotFoundError
+from anpe.prospect.errors import FetchNotFoundError
 
 
 def ddg_search(query: str, max_results: int = 10) -> str:

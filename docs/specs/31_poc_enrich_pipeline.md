@@ -4,6 +4,9 @@ status: done
 
 # POC — Enrichment pipeline
 
+> **Rename note (2026-05-03):** the `enrich` module and CLI command were renamed to
+> `prospect` (`anpe/prospect/`, `anpe prospect …`). The pipeline design is unchanged.
+
 Simplified implementation goal. Get the core fetch → summarize loop working on one
 real company before adding profile, triage, multi-node, or agent integration.
 

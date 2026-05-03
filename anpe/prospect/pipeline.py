@@ -7,9 +7,9 @@ from dataclasses import dataclass, field
 from datetime import datetime, timezone
 
 from anpe.config import settings
-from anpe.enrich.errors import FetchBlockedError, FetchNotFoundError, FetchRetryableError
-from anpe.enrich.registry import FETCH_TOOLS
-from anpe.enrich.summarize import llm_summarize
+from anpe.prospect.errors import FetchBlockedError, FetchNotFoundError, FetchRetryableError
+from anpe.prospect.registry import FETCH_TOOLS
+from anpe.prospect.summarize import llm_summarize
 from anpe.node_dir import FetchEntry, NodeDir
 
 

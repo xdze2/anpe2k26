@@ -1,4 +1,4 @@
-"""ANPE CLI — interactive chat + enrichment commands."""
+"""ANPE CLI — interactive chat + prospect commands."""
 
 from __future__ import annotations
 
@@ -13,7 +13,7 @@ from rich.text import Text
 from anpe.node_dir import NodeDir
 
 if TYPE_CHECKING:
-    from anpe.enrich.pipeline import StepLog
+    from anpe.prospect.pipeline import StepLog
 
 console = Console()
 
@@ -123,27 +123,14 @@ def chat() -> None:
     asyncio.run(_chat_loop())
 
 
-@cli.command("add_target")
-@click.argument("node_id")
-@click.argument("tool")
-@click.argument("keyword")
-def add_target(node_id: str, tool: str, keyword: str) -> None:
-    """Append a fetch target to a node's queue.
+# ---------------------------------------------------------------------------
+# Prospect group
+# ---------------------------------------------------------------------------
 
-    Example: anpe add_target acme ddg "Acme Corp France"
-    """
-    from anpe.enrich.registry import FETCH_TOOLS
 
-    if tool not in FETCH_TOOLS:
-        raise click.BadParameter(
-            f"must be one of {list(FETCH_TOOLS)}", param_hint="TOOL"
-        )
-    node = NodeDir(node_id)
-    is_new = not node.exists()
-    node.append_target(tool, keyword)
-    created = " [dim](created)[/]" if is_new else ""
-    console.print(f" [dim]node[/] [bold]{node_id}[/]{created}")
-    console.print(f" [dim]queued[/] [{tool}] {keyword}")
+@cli.group("prospect")
+def prospect_group() -> None:
+    """Research and enrich prospected companies."""
 
 
 def _print_step_log(log: StepLog) -> None:
@@ -164,25 +151,48 @@ def _print_step_log(log: StepLog) -> None:
         console.print(f" [dim]queued[/] [{tool}] {target}")
 
 
-@cli.command("enrich")
+@prospect_group.command("add_target")
 @click.argument("node_id")
-def enrich(node_id: str) -> None:
-    """Run one enrichment step on a node (fetch if pending, summarize if fetch_done).
+@click.argument("tool")
+@click.argument("keyword")
+def add_target(node_id: str, tool: str, keyword: str) -> None:
+    """Append a fetch target to a node's queue.
 
-    Example: anpe enrich acme
+    Example: anpe prospect add_target acme ddg "Acme Corp France"
     """
-    from anpe.enrich.pipeline import enrich_step
+    from anpe.prospect.registry import FETCH_TOOLS
+
+    if tool not in FETCH_TOOLS:
+        raise click.BadParameter(
+            f"must be one of {list(FETCH_TOOLS)}", param_hint="TOOL"
+        )
+    node = NodeDir(node_id)
+    is_new = not node.exists()
+    node.append_target(tool, keyword)
+    created = " [dim](created)[/]" if is_new else ""
+    console.print(f" [dim]node[/] [bold]{node_id}[/]{created}")
+    console.print(f" [dim]queued[/] [{tool}] {keyword}")
+
+
+@prospect_group.command("step")
+@click.argument("node_id")
+def prospect_step(node_id: str) -> None:
+    """Run one prospect step on a node (fetch if pending, summarize if fetch_done).
+
+    Example: anpe prospect step acme
+    """
+    from anpe.prospect.pipeline import enrich_step
 
     log = asyncio.run(enrich_step(node_id))
     _print_step_log(log)
 
 
-@cli.command("status")
+@prospect_group.command("status")
 @click.argument("node_id")
-def status(node_id: str) -> None:
+def prospect_status(node_id: str) -> None:
     """Show fetch status and history for a node.
 
-    Example: anpe status acme
+    Example: anpe prospect status acme
     """
     node = NodeDir(node_id)
     if not node.exists():
@@ -218,20 +228,20 @@ def status(node_id: str) -> None:
         )
 
 
-@cli.command("summarize")
+@prospect_group.command("summarize")
 @click.argument("node_id")
 @click.argument("fetch_uid", required=False, default=None)
-def summarize(node_id: str, fetch_uid: str | None) -> None:
+def prospect_summarize(node_id: str, fetch_uid: str | None) -> None:
     """Re-run summarize on an already-fetched target, bypassing the queue.
 
     Uses the most recent fetch_done target if FETCH_UID is omitted.
     Intended for prompt tuning — does not re-fetch.
 
     Examples:
-      anpe summarize acme
-      anpe summarize acme a3f1
+      anpe prospect summarize acme
+      anpe prospect summarize acme a3f1
     """
-    from anpe.enrich.pipeline import summarize_step
+    from anpe.prospect.pipeline import summarize_step
 
     try:
         log = asyncio.run(summarize_step(node_id, fetch_uid))

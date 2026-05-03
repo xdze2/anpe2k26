@@ -5,9 +5,9 @@ from __future__ import annotations
 from collections.abc import Awaitable, Callable
 from dataclasses import dataclass
 
-from anpe.enrich.fetch.ddg import ddg_search
-from anpe.enrich.fetch.siren import siren_fetch, siren_process
-from anpe.enrich.summarize import EnrichResult, llm_summarize
+from anpe.prospect.fetch.ddg import ddg_search
+from anpe.prospect.fetch.siren import siren_fetch, siren_process
+from anpe.prospect.summarize import EnrichResult, llm_summarize
 
 
 @dataclass

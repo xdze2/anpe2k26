@@ -5,7 +5,7 @@ from __future__ import annotations
 import json
 
 from anpe.clients.siren import siren_fetch
-from anpe.enrich.summarize import EnrichResult, FetchTarget
+from anpe.prospect.summarize import EnrichResult, FetchTarget
 from anpe.tools.naf import _load_csv_index as _naf_index
 
 __all__ = ["siren_fetch", "siren_process"]

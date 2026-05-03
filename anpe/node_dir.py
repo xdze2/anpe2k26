@@ -1,4 +1,4 @@
-"""Disk interface for a single enrichment node.
+"""Disk interface for a single prospect node.
 
 A node lives at USER_DATA_DIR/nodes/<node_id>/ and contains:
   fetch.jsonl           — append-only state machine log; events: put | fetch_done | summarize_done | …
