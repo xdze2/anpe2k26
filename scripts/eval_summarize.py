@@ -44,9 +44,11 @@ def make_agent(model_slug: str) -> Agent:
 
 
 async def run_one(
-    agent: Agent, raw_data: str, previous_summary: str
+    agent: Agent, raw_data: str, company_profile: str, previous_summary: str
 ) -> tuple[EnrichResult, float]:
     prompt = ""
+    if company_profile:
+        prompt += f"## Company profile\n\n{company_profile}\n\n"
     if previous_summary:
         prompt += f"## Previous summary\n\n{previous_summary}\n\n"
     prompt += f"## New data\n\n{raw_data}"
@@ -73,7 +75,10 @@ async def main() -> None:
                 agent = make_agent(model_slug)
                 try:
                     result, elapsed = await run_one(
-                        agent, raw_data, fixture["previous_summary"]
+                        agent,
+                        raw_data,
+                        fixture.get("company_profile", ""),
+                        fixture["previous_summary"],
                     )
                     row = {
                         "fixture": fixture["id"],
