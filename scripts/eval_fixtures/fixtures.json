@@ -1,0 +1,38 @@
+[
+  {
+    "id": "nexalia_noisy",
+    "file": "ddg_nexalia_noisy.txt",
+    "note": "Noisy DDG — real company (Nexalia Développement) mixed with associations",
+    "previous_summary": "## SIREN data\n\n**Name:** Nexalia Développement\n**SIREN:** 501 765 432\n**NAF:** 62.01Z — Programmation informatique\n**Category:** PME\n**Headcount:** 20-49 employees\n**Created:** 2008-03-12\n**Status:** A\n**Address:** 21 allées Jean Jaurès, 44000 Nantes"
+  },
+  {
+    "id": "vectorix_clean",
+    "file": "ddg_vectorix_clean.txt",
+    "note": "Clean DDG — clear company with website URLs in results",
+    "previous_summary": "## SIREN data\n\n**Name:** Vectorix\n**SIREN:** 822 168 043\n**NAF:** 62.01Z — Programmation informatique\n**Category:** PME\n**Headcount:** 20-49 employees\n**Created:** 2016-11-04\n**Status:** A\n**Address:** 12 rue du Faubourg Saint-Antoine, 75011 Paris"
+  },
+  {
+    "id": "aquamont_irrelevant",
+    "file": "ddg_aquamont_irrelevant.txt",
+    "note": "Multinational — should be not_relevant",
+    "previous_summary": "## SIREN data\n\n**Name:** Aquamont SA\n**SIREN:** 403 210 032\n**NAF:** 36.00Z — Captage, traitement et distribution d'eau\n**Category:** GE\n**Headcount:** 10 000+ employees\n**Revenue (2023):** 44396.0M€\n**Created:** 1998-06-01\n**Status:** A\n**Address:** 30 rue Madeleine Vionnet, 93300 Aubervilliers"
+  },
+  {
+    "id": "arkanis_irrelevant",
+    "file": "ddg_arkanis_irrelevant.txt",
+    "note": "Large defense group — should be not_relevant, noisy (Arkanis of Miletus)",
+    "previous_summary": "## SIREN data\n\n**Name:** Arkanis\n**SIREN:** 662 042 449\n**NAF:** 30.30Z — Construction aéronautique et spatiale\n**Category:** GE\n**Headcount:** 10 000+ employees\n**Revenue (2023):** 21920.0M€\n**Created:** 2000-12-01\n**Status:** A\n**Address:** 1 boulevard Jean Moulin, 78140 Vélizy-Villacoublay"
+  },
+  {
+    "id": "empty_input",
+    "file": "ddg_empty.txt",
+    "note": "Empty fetch result — should be no_data, no hallucination",
+    "previous_summary": "## SIREN data\n\n**Name:** Atelier Lunaire\n**SIREN:** 912 345 678\n**NAF:** 74.10Z — Activités spécialisées de design\n**Category:** PME\n**Headcount:** 3-5 employees\n**Created:** 2021-09-15\n**Status:** A\n**Address:** 8 rue des Acacias, 69001 Lyon"
+  },
+  {
+    "id": "truncated_html",
+    "file": "fetch_truncated_html.txt",
+    "note": "Truncated HTML page — partial content, should extract what it can",
+    "previous_summary": "## SIREN data\n\n**Name:** Nexalia Développement\n**SIREN:** 501 765 432\n**NAF:** 62.01Z — Programmation informatique\n**Category:** PME\n**Headcount:** 20-49 employees\n**Created:** 2008-03-12\n**Status:** A\n**Address:** 21 allées Jean Jaurès, 44000 Nantes\n\nNexalia Développement is a French AI and digital transformation agency specialising in NLP solutions for SMEs, based in Nantes."
+  }
+]

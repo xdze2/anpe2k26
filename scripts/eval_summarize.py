@@ -32,44 +32,7 @@ CALL_DELAY_S = 3.0  # pause between API calls to stay within per-minute rate lim
 
 FIXTURES_DIR = Path(__file__).parent / "eval_fixtures"
 
-FIXTURES = [
-    {
-        "id": "nexalia_noisy",
-        "file": "ddg_nexalia_noisy.txt",
-        "note": "Noisy DDG — real company (Nexalia Développement) mixed with associations",
-        "previous_summary": "",
-    },
-    {
-        "id": "vectorix_clean",
-        "file": "ddg_vectorix_clean.txt",
-        "note": "Clean DDG — clear company with website URLs in results",
-        "previous_summary": "",
-    },
-    {
-        "id": "aquamont_irrelevant",
-        "file": "ddg_aquamont_irrelevant.txt",
-        "note": "Multinational — should be not_relevant",
-        "previous_summary": "",
-    },
-    {
-        "id": "arkanis_irrelevant",
-        "file": "ddg_arkanis_irrelevant.txt",
-        "note": "Large defense group — should be not_relevant, noisy (Arkanis of Miletus)",
-        "previous_summary": "",
-    },
-    {
-        "id": "empty_input",
-        "file": "ddg_empty.txt",
-        "note": "Empty fetch result — should be no_data, no hallucination",
-        "previous_summary": "",
-    },
-    {
-        "id": "truncated_html",
-        "file": "fetch_truncated_html.txt",
-        "note": "Truncated HTML page — partial content, should extract what it can",
-        "previous_summary": "",
-    },
-]
+FIXTURES: list[dict] = json.loads((FIXTURES_DIR / "fixtures.json").read_text())
 
 
 def make_agent(model_slug: str) -> Agent:
