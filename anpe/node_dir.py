@@ -267,6 +267,44 @@ class NodeDir:
             self.init()
         self._write_summary(fm, body)
 
+    # ------------------------------------------------------------------
+    # Reviews log
+    # ------------------------------------------------------------------
+
+    def append_review(self, reaction: str) -> None:
+        """Append a review event. Empty reaction = skip."""
+        event: dict = {"ts": _now()}  # type: ignore[type-arg]
+        if reaction:
+            event["reaction"] = reaction
+        else:
+            event["skip"] = True
+        review_file = self.path / "reviews.jsonl"
+        with review_file.open("a", encoding="utf-8") as f:
+            f.write(json.dumps(event, ensure_ascii=False) + "\n")
+
+    def get_latest_review(self) -> dict | None:  # type: ignore[type-arg]
+        """Return the last review event, or None."""
+        review_file = self.path / "reviews.jsonl"
+        if not review_file.exists():
+            return None
+        all_lines = review_file.read_text(encoding="utf-8").splitlines()
+        lines = [line for line in all_lines if line.strip()]
+        if not lines:
+            return None
+        return json.loads(lines[-1])
+
+    def is_reviewed(self) -> bool:
+        """True if the latest review is a reaction (not a skip)."""
+        ev = self.get_latest_review()
+        return ev is not None and not ev.get("skip", False)
+
+    def has_summarize_done(self) -> bool:
+        """True if any fetch cycle reached summarize_done with status ok or no_data."""
+        for ev in self._load_fetch_events():
+            if ev.get("event") == "summarize_done" and ev.get("status") in ("ok", "no_data"):
+                return True
+        return False
+
     def _write_summary(self, fm: dict, body: str) -> None:  # type: ignore[type-arg]
         import yaml
         if not self.path.exists():

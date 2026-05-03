@@ -203,7 +203,7 @@ def prospect_list() -> None:
 
         # First line of summary as context
         summary_hint = ""
-        summary = node.get_summary()
+        summary = node.get_summary_body()
         if summary:
             first_line = summary.strip().splitlines()[0].lstrip("#").strip()
             summary_hint = f"  [dim]{first_line[:60]}[/]"
@@ -377,6 +377,21 @@ def prospect_status(node_id: str) -> None:
             f" [dim]{row['uid']}[/]  [bold]{row['tool']}[/]  {target_display}"
             f"  [{style}]{row['last_event']}[/]  [dim]{ts}[/]"
         )
+
+
+@prospect_group.command("review")
+def prospect_review() -> None:
+    """Page through summarized nodes and record a reaction.
+
+    Empty enter = skip (can be reviewed again later).
+    Any text = saved as reaction to reviews.jsonl.
+    q = quit.
+
+    Example: anpe prospect review
+    """
+    from anpe.prospect.review import run_review
+
+    run_review()
 
 
 @prospect_group.command("summarize")
