@@ -1,5 +1,5 @@
 ---
-status: draft
+status: done
 ---
 
 # Bootstrap — generate company listing from SIRENE API
@@ -30,10 +30,10 @@ Hand-written by the user. Example:
 
 ```yaml
 naf_codes:
-  - "62.01Z"   # Programmation informatique
-  - "62.02A"   # Conseil en systèmes et logiciels informatiques
+  - "62.01Z" # Programmation informatique
+  - "62.02A" # Conseil en systèmes et logiciels informatiques
   - "62.02B"
-  - "72.19Z"   # R&D en sciences physiques et naturelles
+  - "72.19Z" # R&D en sciences physiques et naturelles
 
 locations:
   - city: "Toulouse"
@@ -49,10 +49,10 @@ locations:
     departements: ["69"]
 
 size:
-  tranche_min: "11"   # 10-19 employees
-  tranche_max: "41"   # 500-999 employees
+  tranche_min: "11" # 10-19 employees
+  tranche_max: "41" # 500-999 employees
 
-etat_administratif: "A"   # active companies only
+etat_administratif: "A" # active companies only
 ```
 
 `departements` drives the API query (coarse geographic filter).
