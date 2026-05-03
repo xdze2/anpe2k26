@@ -191,14 +191,14 @@ def prospect_seed(count: int) -> None:
 def prospect_run(
     node_ids: tuple[str, ...], budget: int, all_nodes: bool, until_done: bool
 ) -> None:
-    """Run the prospect pipeline on nodes (depth-first, total step budget).
+    """Run the prospect pipeline (depth-first, total step budget).
 
-    Examples:
-      anpe prospect run chapsvision_851035329          # 1 step (default)
-      anpe prospect run -n 10                          # 10 steps, all nodes
-      anpe prospect run -n 5 chapsvision_851035329 incomm_479144438
-      anpe prospect run --all-nodes -n 10
-      anpe prospect run --all-nodes --until-done
+    \b
+    anpe prospect run                       1 step, all nodes
+    anpe prospect run -n 10                 10 steps total
+    anpe prospect run -n 5 node1 node2      5 steps on specific nodes
+    anpe prospect run --all-nodes -n 10     explicit node selection
+    anpe prospect run --all-nodes --until-done
     """
     from anpe.prospect.pipeline import _all_node_ids_by_ctime, run_batch
 
@@ -228,6 +228,8 @@ def prospect_run(
 
     async def _run() -> None:
         async for log in run_batch(ids, effective_budget):
+            if log.status == "empty_queue":
+                continue
             _print_step_log(log)
             if log.status == "blocked":
                 console.print(" [bold red]blocked[/] — stopping run")
