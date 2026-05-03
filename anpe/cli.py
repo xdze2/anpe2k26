@@ -151,6 +151,35 @@ def _print_step_log(log: StepLog) -> None:
         console.print(f" [dim]queued[/] [{tool}] {target}")
 
 
+@prospect_group.command("seed")
+@click.option("--count", default=10, show_default=True, help="Number of new nodes to create.")
+def prospect_seed(count: int) -> None:
+    """Pick N new companies from the listing and create prospect nodes.
+
+    Reads user_data/company_listing.csv, skips companies that already have a
+    node, and creates up to COUNT new nodes each with an initial DDG target.
+
+    Example: anpe prospect seed --count 5
+    """
+    from anpe.prospect.seed import seed_from_listing
+    from anpe.node_dir import USER_DATA_DIR
+
+    csv_path = USER_DATA_DIR / "company_listing.csv"
+    if not csv_path.exists():
+        console.print(f" [bold red]Error[/] listing not found: {csv_path}")
+        return
+
+    created = seed_from_listing(csv_path, count)
+
+    if not created:
+        console.print(" [dim]No new companies to seed (all already have nodes, or listing is empty).[/]")
+        return
+
+    for node_id in created:
+        console.print(f" [green]created[/] [bold]{node_id}[/]")
+    console.print(f"\n [dim]{len(created)} node(s) created.[/]")
+
+
 @prospect_group.command("add_target")
 @click.argument("node_id")
 @click.argument("tool")
