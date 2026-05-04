@@ -180,39 +180,26 @@ def prospect_list() -> None:
         node = NodeDir(node_id)
         rows = node.get_fetch_history()
 
-        # Count pending targets
         pending = sum(
             1 for r in rows if r["last_event"] in ("put", "summarize_error")
         )
 
-        # Find the most recent summarize_done event for model/prompt_version
-        model_tag = ""
-        for ev in reversed(node._load_fetch_events()):
-            if ev["event"] == "summarize_done":
-                m = ev.get("model", "")
-                pv = ev.get("prompt_version", "")
-                model_tag = f"  [dim]{m}"
-                if pv:
-                    model_tag += f" p:{pv}"
-                model_tag += "[/]"
-                break
-
-        # Overall state: last event type across all uids
         last_event = rows[-1]["last_event"] if rows else "empty"
         style = _STATUS_STYLE.get(last_event, "white")
 
-        # First line of summary as context
-        summary_hint = ""
-        summary = node.get_summary_body()
-        if summary:
-            first_line = summary.strip().splitlines()[0].lstrip("#").strip()
-            summary_hint = f"  [dim]{first_line[:60]}[/]"
+        fm = node.get_frontmatter()
+        name = fm.get("name") or node_id
 
         pending_tag = f"  [yellow]{pending} pending[/]" if pending else ""
 
+        review = node.get_latest_review()
+        reaction_tag = ""
+        if review and review.get("reaction"):
+            reaction_tag = f"  [dim green]\"{review['reaction']}\"[/]"
+
         console.print(
-            f" [bold]{node_id}[/]  [{style}]{last_event}[/]"
-            f"{pending_tag}{model_tag}{summary_hint}"
+            f" [bold]{name}[/]  [{style}]{last_event}[/]"
+            f"{pending_tag}{reaction_tag}"
         )
 
 
