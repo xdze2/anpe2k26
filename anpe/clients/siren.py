@@ -48,4 +48,4 @@ def siren_fetch(number: str) -> str:
     if len(number) == 14 and result.get("siege", {}).get("siret", "") != number:
         raise FetchNotFoundError(f"SIREN: no company found for SIRET {number!r}")
 
-    return json.dumps(result)
+    return json.dumps(result, ensure_ascii=False, indent=2)
