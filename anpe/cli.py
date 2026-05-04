@@ -404,6 +404,71 @@ def prospect_summarize(node_id: str, fetch_uid: str | None) -> None:
     _print_step_log(log)
 
 
+@cli.group("profile")
+def profile_group() -> None:
+    """Manage the user search profile."""
+
+
+@profile_group.command("update")
+@click.option("--dry-run", is_flag=True, default=False, help="Print the LLM prompt without calling the API.")
+def profile_update(dry_run: bool) -> None:
+    """Synthesize new reactions into an updated search profile.
+
+    With --dry-run, prints the prompt you can paste into a web AI.
+
+    Example: anpe profile update --dry-run
+    """
+    from anpe.prospect.pipeline import _all_node_ids_by_ctime
+    from anpe.profile import read_profile
+
+    reactions: list[str] = []
+    for node_id in _all_node_ids_by_ctime():
+        node = NodeDir(node_id)
+        review = node.get_latest_review()
+        if not review or not review.get("reaction"):
+            continue
+        fm = node.get_frontmatter()
+        name = fm.get("name") or node_id
+        parts = [p for p in [fm.get("city"), fm.get("headcount")] if p]
+        meta = " · ".join(str(p) for p in parts)
+        reaction = review["reaction"]
+        summary = node.get_summary_body().strip()
+        summary_snippet = " ".join(summary.split())[:150] if summary else ""
+        line = f"- [{name}] {meta} — \"{reaction}\""
+        if summary_snippet:
+            line += f"\n  {summary_snippet}"
+        reactions.append(line)
+
+    if not reactions:
+        console.print(" [dim]No reactions recorded yet.[/]")
+        return
+
+    profile = read_profile()
+    profile_block = profile if profile.strip() else "(empty — not yet filled)"
+
+    prompt = f"""\
+You are updating a job-search profile based on the user's reactions to company summaries.
+Be conservative — only update what the reactions clearly support.
+Return the full updated profile text.
+
+Current profile:
+{profile_block}
+
+Recent reactions:
+{chr(10).join(reactions)}
+
+Update the profile to reflect what these reactions reveal about what the user is and isn't looking for.\
+"""
+
+    if dry_run:
+        console.print()
+        console.print(prompt)
+        console.print()
+        console.print(f" [dim]{len(reactions)} reaction(s) included.[/]")
+    else:
+        console.print(" [yellow]Live profile update not yet implemented. Use --dry-run to print the prompt.[/]")
+
+
 @cli.group("bootstrap")
 def bootstrap_group() -> None:
     """Generate company listing from SIRENE API."""
