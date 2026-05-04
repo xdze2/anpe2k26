@@ -123,7 +123,7 @@ async def _run_process(node: NodeDir, entry: FetchEntry, raw_data: str, raw_file
                 prompt_file=prompt_file,
             )
         else:
-            result = await tool.process(raw_data, previous_summary)
+            result = await tool.summarize(raw_data, previous_summary)
         duration_s = round(time.monotonic() - t0, 2)
     except Exception as e:
         detail = str(e)
