@@ -99,6 +99,18 @@ Rules:
 
 - summary: markdown, under 300 words, synthesize don't accumulate. English.
   Do not repeat information already in the Company profile block.
+  Do not add filler sections like "Key insights", "Key takeaway", "Next steps",
+  "Potential fit", or any closing sentence about why the company "appeals to tech
+  professionals" — that judgement belongs to the user, not the summary.
+
+  Start the summary with a single compact header line:
+    **Type**: <nature of activity — e.g. éditeur logiciel, ESN/prestataire, agence,
+              conseil, industrie avec DSI interne> · **Domaine**: <business or tech
+              sector — e.g. e-commerce, cybersécurité, RH, mobilité, spatial> ·
+              **Marché**: <who are the clients — B2B, B2C, B2G, mixte>
+  Leave a field empty if the data does not support a confident answer.
+  The rest of the summary contains only what is not already obvious from that header
+  line or from the Company profile block.
 """
 
 _MODEL_NAME = "mistral-small-2603"
