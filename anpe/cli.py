@@ -253,7 +253,7 @@ def prospect_run(
     anpe prospect run --all-nodes --until-done
     """
     from anpe.node_dir import all_node_ids_by_ctime
-from anpe.prospect.pipeline import run_batch
+    from anpe.prospect.pipeline import run_batch
 
     if node_ids and all_nodes:
         raise click.UsageError("NODE_IDs and --all-nodes are mutually exclusive.")
