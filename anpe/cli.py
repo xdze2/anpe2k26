@@ -314,18 +314,6 @@ def add_target(node_id: str, tool: str, keyword: str) -> None:
     console.print(f" [dim]queued[/] [{tool}] {keyword}")
 
 
-@prospect_group.command("step")
-@click.argument("node_id")
-def prospect_step(node_id: str) -> None:
-    """Run one prospect step on a node (fetch if pending, summarize if fetch_done).
-
-    Example: anpe prospect step acme
-    """
-    from anpe.prospect.pipeline import enrich_step
-
-    log = asyncio.run(enrich_step(node_id))
-    _print_step_log(log)
-
 
 @prospect_group.command("status")
 @click.argument("node_id")
@@ -384,27 +372,51 @@ def prospect_review() -> None:
     run_review()
 
 
-@prospect_group.command("summarize")
-@click.argument("node_id")
-@click.argument("fetch_uid", required=False, default=None)
-def prospect_summarize(node_id: str, fetch_uid: str | None) -> None:
-    """Re-run summarize on an already-fetched target, bypassing the queue.
+@prospect_group.command("resummarize")
+@click.argument("node_ids", nargs=-1, metavar="[NODE_ID]...")
+@click.option("--all-nodes", is_flag=True, help="Check all existing nodes.")
+def prospect_resummarize(node_ids: tuple[str, ...], all_nodes: bool) -> None:
+    """Queue stale summaries for re-summarization on the next run.
 
-    Uses the most recent fetch_done target if FETCH_UID is omitted.
-    Intended for prompt tuning — does not re-fetch.
+    Scans nodes for summarize_done entries whose summarize_version no longer
+    matches the current constant (model or prompt changed). Appends a
+    resummarize event — the next 'anpe prospect run' will re-summarize them
+    without re-fetching.
 
-    Examples:
-      anpe prospect summarize acme
-      anpe prospect summarize acme a3f1
+    \b
+    anpe prospect resummarize                  check all nodes
+    anpe prospect resummarize node1 node2      check specific nodes
     """
-    from anpe.prospect.pipeline import summarize_step
+    from anpe.node_dir import all_node_ids_by_ctime
+    from anpe.prospect.registry import FETCH_TOOLS
 
-    try:
-        log = asyncio.run(summarize_step(node_id, fetch_uid))
-    except ValueError as e:
-        console.print(f" [bold red]Error[/] {e}")
+    if node_ids and all_nodes:
+        raise click.UsageError("NODE_IDs and --all-nodes are mutually exclusive.")
+
+    ids = list(node_ids) if node_ids else all_node_ids_by_ctime()
+
+    if not ids:
+        console.print(" [dim]No nodes found.[/]")
         return
-    _print_step_log(log)
+
+    tool_versions = {slug: tool.version for slug, tool in FETCH_TOOLS.items()}
+
+    total = 0
+    for node_id in ids:
+        node = NodeDir(node_id)
+        if not node.exists():
+            console.print(f" [bold red]Error[/] node {node_id!r} not found")
+            continue
+        stale = node.get_stale_summarize_uids(tool_versions)
+        for uid in stale:
+            node.mark_resummarize(uid, reason="version_change")
+            console.print(f" [dim]node[/] [bold]{node_id}[/]  [yellow]resummarize[/] uid={uid}")
+            total += 1
+
+    if total == 0:
+        console.print(" [dim]All summaries are up to date.[/]")
+    else:
+        console.print(f"\n [dim]{total} uid(s) queued for re-summarization.[/]")
 
 
 @cli.group("profile")

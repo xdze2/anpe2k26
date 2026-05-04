@@ -45,7 +45,7 @@ async def enrich_step(node_id: str) -> StepLog:
         print(f"[{node_id}] queue is empty")
         return StepLog(node_id=node_id, tool="", target="", status="empty_queue")
 
-    # Check if fetch is already done (summarize_error retry case)
+    # Check if fetch is already done (summarize_error retry or resummarize case)
     fetch_done_ev = node.get_fetch_done(entry.uid)
     if fetch_done_ev is not None:
         raw_file = fetch_done_ev["raw_file"]
@@ -68,34 +68,6 @@ async def enrich_step(node_id: str) -> StepLog:
 
     return await _run_process(node, entry, raw_data, raw_file)
 
-
-async def summarize_step(node_id: str, fetch_uid: str | None = None) -> StepLog:
-    """Re-run process on an already-fetched target, bypassing the queue.
-
-    If fetch_uid is None, uses the most recent fetch_done event.
-    Intended for prompt tuning — writes a new summarize result file each time.
-    """
-    node = NodeDir(node_id)
-
-    if fetch_uid is not None:
-        fetch_done_ev = node.get_fetch_done(fetch_uid)
-        if fetch_done_ev is None:
-            raise ValueError(f"No fetch_done event found for uid={fetch_uid!r}")
-        puts, _ = node._latest_event_per_uid()
-        put_ev = puts.get(fetch_uid)
-        if put_ev is None:
-            raise ValueError(f"No put event found for uid={fetch_uid!r}")
-        entry = FetchEntry(uid=fetch_uid, tool=put_ev["tool"], target=put_ev["target"])
-        raw_file = fetch_done_ev["raw_file"]
-    else:
-        result = node.get_latest_fetch_done()
-        if result is None:
-            raise ValueError(f"No fetch_done event found for node {node_id!r}")
-        entry, raw_file = result
-
-    raw_data = (node._raw_dir / raw_file).read_text(encoding="utf-8")
-    print(f"[{node_id}] process  uid={entry.uid}  file={raw_file}")
-    return await _run_process(node, entry, raw_data, raw_file)
 
 
 async def _run_process(node: NodeDir, entry: FetchEntry, raw_data: str, raw_file: str) -> StepLog:

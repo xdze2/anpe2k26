@@ -8,7 +8,9 @@ from anpe.clients.siren import siren_fetch
 from anpe.prospect.types import FetchTarget, SummarizeResult
 from anpe.tools.naf import _load_csv_index as _naf_index
 
-__all__ = ["siren_fetch", "siren_summarize"]
+__all__ = ["siren_fetch", "siren_summarize", "SIREN_SUMMARIZE_VERSION"]
+
+SIREN_SUMMARIZE_VERSION = "v2"
 
 
 _HEADCOUNT_BANDS: dict[str, str] = {
@@ -62,6 +64,6 @@ async def siren_summarize(raw_data: str, previous_summary: str, company_profile:
         summary=previous_summary,
         new_targets=new_targets,
         frontmatter=fm,
-        version="v1",
+        version=SIREN_SUMMARIZE_VERSION,
         model="siren_api",
     )

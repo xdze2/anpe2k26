@@ -88,11 +88,11 @@ class NodeDir:
         return puts, latest
 
     def pop_pending(self) -> FetchEntry | None:
-        """Return the first target in a pending state (put or summarize_error)."""
+        """Return the first target in a pending state (put, summarize_error, or resummarize)."""
         puts, latest = self._latest_event_per_uid()
         for uid, put_ev in puts.items():
             last = latest.get(uid, put_ev)
-            if last["event"] in ("put", "summarize_error"):
+            if last["event"] in ("put", "summarize_error", "resummarize"):
                 return FetchEntry(uid=uid, tool=put_ev["tool"], target=put_ev["target"])
         return None
 
@@ -142,6 +142,36 @@ class NodeDir:
         self._append_fetch_event(
             {"event": "summarize_error", "uid": entry.uid, "detail": detail, "ts": _now()}
         )
+
+    def mark_resummarize(self, uid: str, reason: str = "") -> None:
+        """Append a resummarize event — signals the uid needs re-summarizing."""
+        ev: dict = {"event": "resummarize", "uid": uid, "ts": _now()}  # type: ignore[type-arg]
+        if reason:
+            ev["reason"] = reason
+        self._append_fetch_event(ev)
+
+    def get_stale_summarize_uids(self, tool_versions: dict[str, str]) -> list[str]:
+        """Return uids with a summarize_done whose summarize_version differs from the tool's current version."""
+        puts, latest = self._latest_event_per_uid()
+        stale = []
+        for uid, last in latest.items():
+            if last["event"] != "summarize_done":
+                continue
+            result_file = last.get("result_file", "")
+            if not result_file:
+                continue
+            tool = puts.get(uid, {}).get("tool", "")
+            current_version = tool_versions.get(tool)
+            if current_version is None:
+                continue
+            sum_path = self._summarize_dir / result_file
+            if not sum_path.exists():
+                stale.append(uid)
+                continue
+            data = json.loads(sum_path.read_text(encoding="utf-8"))
+            if data.get("summarize_version") != current_version:
+                stale.append(uid)
+        return stale
 
     def get_fetch_history(self) -> list[dict]:  # type: ignore[type-arg]
         """Return one summary dict per uid, ordered by put timestamp."""

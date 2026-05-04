@@ -115,7 +115,9 @@ Rules:
 
 _MODEL_NAME = "mistral-small-2603"
 _BLACKLIST_KEY = ",".join(sorted(DIRECTORY_BLACKLIST))
-SUMMARIZE_VERSION = hashlib.sha1((_SYSTEM + _MODEL_NAME + _BLACKLIST_KEY).encode()).hexdigest()[:6]
+SUMMARIZE_VERSION = hashlib.sha1(
+    (_SYSTEM + _MODEL_NAME + _BLACKLIST_KEY).encode()
+).hexdigest()[:6]
 
 MAX_RETRIES = 3
 _RETRY_BASE_DELAY = 5.0  # seconds, doubles each attempt
