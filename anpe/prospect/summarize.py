@@ -120,7 +120,7 @@ SUMMARIZE_VERSION = hashlib.sha1(
 ).hexdigest()[:6]
 
 MAX_RETRIES = 3
-_RETRY_BASE_DELAY = 5.0  # seconds, doubles each attempt
+_RETRY_BASE_DELAY = 10.0  # seconds, doubles each attempt
 
 
 class LLMCreditsError(RuntimeError):
@@ -188,6 +188,7 @@ async def ddg_summarize(
                 print(
                     f"[llm] rate-limited (429), retrying in {delay:.0f}s "
                     f"(attempt {attempt + 1}/{MAX_RETRIES})"
+                    f"error={e}"
                 )
                 await asyncio.sleep(delay)
                 last_error = e
