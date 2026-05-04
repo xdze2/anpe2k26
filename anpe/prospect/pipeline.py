@@ -18,13 +18,11 @@ from __future__ import annotations
 import time
 from collections.abc import AsyncGenerator
 from dataclasses import dataclass, field
-from datetime import UTC, datetime
 
 from anpe.config import settings
 from anpe.node_dir import NODES_DIR, FetchEntry, NodeDir
 from anpe.prospect.errors import FetchBlockedError, FetchNotFoundError, FetchRetryableError
 from anpe.prospect.registry import FETCH_TOOLS
-from anpe.prospect.summarize import SUMMARIZE_VERSION, llm_summarize
 
 
 @dataclass
@@ -113,17 +111,8 @@ async def _run_process(node: NodeDir, entry: FetchEntry, raw_data: str, raw_file
 
     try:
         t0 = time.monotonic()
-        if tool.capture_prompt:
-            ts = datetime.now(UTC).strftime("%Y%m%dT%H%M%S")
-            prompt_file = node.prompt_file_path(entry, ts)
-            company_profile = _fmt_company_profile(node.get_frontmatter())
-            result = await llm_summarize(
-                raw_data, previous_summary,
-                company_profile=company_profile,
-                prompt_file=prompt_file,
-            )
-        else:
-            result = await tool.summarize(raw_data, previous_summary)
+        company_profile = _fmt_company_profile(node.get_frontmatter())
+        result = await tool.summarize(raw_data, previous_summary, company_profile)
         duration_s = round(time.monotonic() - t0, 2)
     except Exception as e:
         detail = str(e)
@@ -139,11 +128,12 @@ async def _run_process(node: NodeDir, entry: FetchEntry, raw_data: str, raw_file
     result_file = node.save_summarize_result(
         entry=entry,
         model=settings.mistral_model,
-        summarize_version=SUMMARIZE_VERSION,
+        summarize_version=result.version,
         status=result.status,
         summary=result.summary,
         new_targets=new_targets,
         raw_file=raw_file,
+        prompt=result.prompt,
         duration_s=duration_s,
     )
     node.mark_summarize_done(

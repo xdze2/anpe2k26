@@ -173,11 +173,6 @@ class NodeDir:
     # Summarize results
     # ------------------------------------------------------------------
 
-    def prompt_file_path(self, entry: FetchEntry, ts: str) -> Path:
-        """Return the path for a prompt debug file (not yet written)."""
-        slug = entry.target[:40].replace("/", "_").replace(" ", "_")
-        return self._summarize_dir / f"prompt_{entry.tool}_{slug}_{ts}.txt"
-
     def save_summarize_result(
         self,
         entry: FetchEntry,
@@ -187,14 +182,18 @@ class NodeDir:
         summary: str,
         new_targets: list[tuple[str, str]],
         raw_file: str,
+        prompt: str = "",
         duration_s: float | None = None,
     ) -> str:
-        """Write one summarize result file. Returns the filename."""
+        """Write sum_*.json and prompt_*.txt. Returns the json filename."""
         if not self._summarize_dir.exists():
             self.init()
         ts = datetime.now(timezone.utc).strftime("%Y%m%dT%H%M%S")
         slug = entry.target[:40].replace("/", "_").replace(" ", "_")
-        filename = f"sum_{entry.tool}_{slug}_{status}_{ts}.json"
+        stem = f"{entry.tool}_{slug}_{status}_{ts}"
+        if prompt:
+            (self._summarize_dir / f"prompt_{stem}.txt").write_text(prompt, encoding="utf-8")
+        filename = f"sum_{stem}.json"
         data = {
             "ts": _now(),
             "fetch_uid": entry.uid,

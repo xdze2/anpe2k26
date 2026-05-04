@@ -20,7 +20,7 @@ _HEADCOUNT_BANDS: dict[str, str] = {
 }
 
 
-async def siren_process(raw_data: str, previous_summary: str) -> EnrichResult:
+async def siren_process(raw_data: str, previous_summary: str, company_profile: str = "") -> EnrichResult:
     """Extract registry fields into frontmatter and propose a DDG follow-up."""
     r = json.loads(raw_data)
     siege = r.get("siege", {})
@@ -62,4 +62,5 @@ async def siren_process(raw_data: str, previous_summary: str) -> EnrichResult:
         summary=previous_summary,
         new_targets=new_targets,
         frontmatter=fm,
+        version="v1",
     )

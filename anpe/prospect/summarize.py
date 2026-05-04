@@ -4,8 +4,6 @@ from __future__ import annotations
 
 import asyncio
 import hashlib
-from pathlib import Path
-
 from pydantic import BaseModel
 from pydantic_ai import Agent
 from pydantic_ai.models.mistral import MistralModel
@@ -77,6 +75,8 @@ class EnrichResult(BaseModel):
     summary: str
     new_targets: list[FetchTarget]
     frontmatter: dict = {}  # type: ignore[type-arg]  # structured fields to merge into summary.md
+    prompt: str = ""
+    version: str = ""
 
 
 _model = MistralModel(
@@ -95,24 +95,24 @@ async def llm_summarize(
     raw_data: str,
     previous_summary: str,
     company_profile: str = "",
-    prompt_file: Path | None = None,
 ) -> EnrichResult:
-    prompt = ""
+    user_prompt = ""
     if company_profile:
-        prompt += f"## Company profile\n\n{company_profile}\n\n"
+        user_prompt += f"## Company profile\n\n{company_profile}\n\n"
     if previous_summary:
-        prompt += f"## Previous summary\n\n{previous_summary}\n\n"
-    prompt += f"## New data\n\n{raw_data}"
+        user_prompt += f"## Previous summary\n\n{previous_summary}\n\n"
+    user_prompt += f"## New data\n\n{raw_data}"
 
-    if prompt_file is not None:
-        full = f"## System prompt\n\n{_SYSTEM}\n## User prompt\n\n{prompt}"
-        prompt_file.write_text(full, encoding="utf-8")
+    full_prompt = f"## System prompt\n\n{_SYSTEM}\n## User prompt\n\n{user_prompt}"
 
     last_error: Exception | None = None
     for attempt in range(MAX_RETRIES):
         try:
-            result = await _agent.run(prompt)
-            return result.output
+            result = await _agent.run(user_prompt)
+            output = result.output
+            output.prompt = full_prompt
+            output.version = SUMMARIZE_VERSION
+            return output
         except Exception as e:
             msg = str(e)
             if "402" in msg:
