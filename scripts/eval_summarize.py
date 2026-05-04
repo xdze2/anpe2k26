@@ -19,7 +19,7 @@ from pydantic_ai.models.mistral import MistralModel
 from pydantic_ai.providers.mistral import MistralProvider
 
 from anpe.config import settings
-from anpe.prospect.summarize import _SYSTEM, EnrichResult
+from anpe.prospect.summarize import _SYSTEM, SummarizeResult
 
 MODELS = [
     "ministral-8b-2512",
@@ -40,12 +40,12 @@ def make_agent(model_slug: str) -> Agent:
         model_slug,
         provider=MistralProvider(api_key=settings.mistral_api_key),
     )
-    return Agent(model, output_type=EnrichResult, system_prompt=_SYSTEM)
+    return Agent(model, output_type=SummarizeResult, system_prompt=_SYSTEM)
 
 
 async def run_one(
     agent: Agent, raw_data: str, company_profile: str, previous_summary: str
-) -> tuple[EnrichResult, float]:
+) -> tuple[SummarizeResult, float]:
     prompt = ""
     if company_profile:
         prompt += f"## Company profile\n\n{company_profile}\n\n"

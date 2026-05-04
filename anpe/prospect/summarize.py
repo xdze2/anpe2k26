@@ -70,7 +70,7 @@ class FetchTarget(BaseModel):
     target: str
 
 
-class EnrichResult(BaseModel):
+class SummarizeResult(BaseModel):
     status: str  # "ok" | "not_relevant" | "no_data"
     summary: str
     new_targets: list[FetchTarget]
@@ -84,18 +84,18 @@ _model = MistralModel(
     provider=MistralProvider(api_key=settings.mistral_api_key),
 )
 
-_agent: Agent[None, EnrichResult] = Agent(
+_agent: Agent[None, SummarizeResult] = Agent(
     _model,
-    output_type=EnrichResult,
+    output_type=SummarizeResult,
     system_prompt=_SYSTEM,
 )
 
 
-async def llm_summarize(
+async def ddg_summarize(
     raw_data: str,
     previous_summary: str,
     company_profile: str = "",
-) -> EnrichResult:
+) -> SummarizeResult:
     user_prompt = ""
     if company_profile:
         user_prompt += f"## Company profile\n\n{company_profile}\n\n"

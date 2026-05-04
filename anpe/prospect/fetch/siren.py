@@ -5,10 +5,10 @@ from __future__ import annotations
 import json
 
 from anpe.clients.siren import siren_fetch
-from anpe.prospect.summarize import EnrichResult, FetchTarget
+from anpe.prospect.summarize import SummarizeResult, FetchTarget
 from anpe.tools.naf import _load_csv_index as _naf_index
 
-__all__ = ["siren_fetch", "siren_process"]
+__all__ = ["siren_fetch", "siren_summarize"]
 
 
 _HEADCOUNT_BANDS: dict[str, str] = {
@@ -20,7 +20,7 @@ _HEADCOUNT_BANDS: dict[str, str] = {
 }
 
 
-async def siren_process(raw_data: str, previous_summary: str, company_profile: str = "") -> EnrichResult:
+async def siren_summarize(raw_data: str, previous_summary: str, company_profile: str = "") -> SummarizeResult:
     """Extract registry fields into frontmatter and propose a DDG follow-up."""
     r = json.loads(raw_data)
     siege = r.get("siege", {})
@@ -57,7 +57,7 @@ async def siren_process(raw_data: str, previous_summary: str, company_profile: s
         suffix = " entreprise informatique" if naf_section == "J" else " entreprise"
         new_targets.append(FetchTarget(tool="ddg", target=search_name + suffix))
 
-    return EnrichResult(
+    return SummarizeResult(
         status="ok",
         summary=previous_summary,
         new_targets=new_targets,
