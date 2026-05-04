@@ -31,18 +31,27 @@ enrich next. The loop repeats indefinitely.
 
 ## Candidate states
 
-```mermaid
-stateDiagram-v2
-    [*] --> seed: bootstrap
-    seed --> enriched: enrich
-    enriched --> surfaced: surface
-    surfaced --> verdict: user reacts
-    verdict --> enriched: needs more info
-    verdict --> [*]: discarded
-```
+Each candidate carries two independent verdicts:
 
-A candidate moves forward as the system learns more about it. Verdicts are not final —
-a candidate can be re-enriched if new information might change the picture.
+- **User verdict** — set when the user has reviewed the candidate: `interesting`, `not interesting`, or `keep` (not enough data yet), with an optional free-text reason.
+- **LLM verdict** — predicted from enriched data and the current user profile: same three labels.
+
+The `seen_by_user` flag tracks whether the candidate has been surfaced to the user yet.
+
+User verdicts feed back into the user profile, which the user can also edit directly.
+
+The LLM verdict drives what happens next:
+
+| LLM verdict       | seen by user | → next action     |
+| ----------------- | ------------ | ----------------- |
+| `interesting`     | no           | → surface to user |
+| `interesting`     | yes          | → nothing (done)  |
+| `keep`            | any          | → enrich further  |
+| `not interesting` | any          | → discard         |
+
+For seen candidates, the user verdict takes precedence over the LLM verdict. `keep` is a transient state — after each enrichment pass the LLM re-evaluates, eventually resolving to `interesting` or `not interesting`. A maximum retry count prevents indefinite cycling.
+
+The goal is not a full ranking. The candidate space is sparse — most companies are irrelevant, a few are strong matches. The system needs to surface those few, not order all 200.
 
 ## What drives the loop
 
