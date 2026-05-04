@@ -18,18 +18,31 @@ you probably has no active job posting today. It may be a 5-person consultancy d
 integration for the wine industry near Bordeaux, or a startup you've never heard of.
 An LLM assistant can save you hours of unfocused web searching and help you stay on track.
 
-## How it works
+## An exploration assistant
 
-The SIRENE dataset (France gouv) offers a different kind of input: an exhaustive register
-of every company in France. Filtered by sector and geography, it returns companies you've
-never encountered, some of which may be exactly what you're looking for. This is what makes
-systematic discovery possible — an external, complete source capable of genuine surprise.
+The SIRENE dataset contains every registered company in France — tens of thousands of
+candidates once filtered by sector and geography. But SIRENE is purely administrative:
+a SIREN number, a NAF code, a location, (plus other legal data). No website, no description, no
+sense of what the company actually does, and if you would be interested to work with them. There is no pre-existing signal to query
+against — you can't search for "interesting AI startup near Bordeaux" because that field doesn't exist.
 
-The process starts with a **bootstrap**: pull an initial batch of candidates from SIRENE —
-raw seeds with almost no signal beyond sector and location. Then **refinement loops**: each
-loop adds a layer of information to some candidates (web search and website query), updates
-your profile from your reactions, and surfaces the strongest matches. The loop repeats
-across sessions. Each iteration, the profile sharpens and the signal-to-noise ratio improves.
+The challenge is not finding candidates (aka company names) — they are all already there. The challenge is
+navigating a space that is too large to evaluate directly, and too undifferentiated to
+filter by relevance before you've done the work of enriching it.
+
+Also it is an exploration process, we don't known what we are looking for yet, it will be a surprise.
+
+Enrichment is how you generate signal: fetch a website, run a web search, ask an LLM
+to summarize what it found. Each step transforms a dry administrative record into
+something you can actually judge. But enrichment has a cost — in time, in API calls, on noise accumulation —
+so it can't be applied blindly to every candidate.
+
+This is why the assisitent is structured as an exploration loop rather than a batch
+process. At each iteration, a small number of candidates get enriched, evaluated
+against your profile, and surfaced to you. Your reactions — interest, rejection, a
+remark — update the profile and guide which candidates are worth exploring next.
+Over sessions, the explored region grows, the profile sharpens, and the signal-to-noise
+ratio improves.
 
 ## Core ideas
 
