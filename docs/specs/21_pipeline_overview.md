@@ -4,11 +4,12 @@ status: draft
 
 # Pipeline overview
 
-The enrichment pipeline takes a company SIREN number and progressively builds a
-summary from public data sources. Each step is independent and retryable. State
-is stored on disk — the pipeline can be interrupted and resumed at any point.
+The enrichment pipeline...
 
-## Graph
+Each step is independent and retryable. State
+is stored on disk — the pipeline can be interrupted and resumed at any point.Each output should reference the input used (path to file).
+
+## Pipeline Workflow Graph
 
 ```mermaid
 %%{init: {"flowchart": {"rankSpacing": 30, "nodeSpacing": 20}} }%%
@@ -35,8 +36,8 @@ flowchart TD
     DISCARD(["🗑️ discard"])
 
     %% flow
-    LISTING -->|sample| BOOTSTRAP
-    BOOTSTRAP --> QUEUE
+    LISTING --> BOOTSTRAP
+    BOOTSTRAP -->|sample| QUEUE
 
     INTERNET --> RUN
     QUEUE --> RUN
@@ -70,127 +71,109 @@ flowchart TD
     class QUEUE,SUMMARIES,REACTIONS,PROF_DATA,SCORES data
 ```
 
+legend:
+
+- // data
+- () external inputs
+- [] steps
+
 ---
 
 ## Steps
 
-### `seed`
+### `bootstrap()`
 
-Entry point. Creates a node directory and enqueues the first target.
+Queries the SIRENE registry API to build a list of candidate companies matching the search criteria.
 
-|                   |                                                                                                         |
-| ----------------- | ------------------------------------------------------------------------------------------------------- |
-| **Input**         | SIREN number, company name (from `company_listing.csv`)                                                 |
-| **Output**        | Node directory created, `fetch.jsonl` initialized with one `put` event `{tool: siren, target: <SIREN>}` |
-| **Files written** | `nodes/<node_id>/fetch.jsonl`                                                                           |
+|            |                                                               |
+| ---------- | ------------------------------------------------------------- |
+| **Input**  | user pre-selection (search criteria: NAF codes, region, size) |
+| **Output** | `company_listing.csv` — list of candidates (~2k entries)      |
+| **Reads**  | SIRENE API                                                    |
 
----
-
-### `siren`
-
-Fetches company registry data from the SIRENE API.
-
-|                            |                                                                       |
-| -------------------------- | --------------------------------------------------------------------- |
-| **Input**                  | SIREN number                                                          |
-| **Output**                 | Raw JSON from SIRENE API                                              |
-| **Files written**          | `raw_data/raw_siren_<...>.json`                                       |
-| **Frontmatter fields set** | `siren`, `name`, `name_legal`, `naf`, `category`, `headcount`, `city` |
-| **Next target enqueued**   | `{tool: ddg, target: "<name> entreprise informatique"}`               |
+Only a sample of the listing is seeded into the pipeline —
+not every company gets enriched. (This is for now arbitrary, alphabetical order...)
+Command `anpe proscect seed` is used to create node
 
 ---
 
-### `ddg`
+### `fetch_and_summarize()` 🤖
 
-Fetches search snippets from DuckDuckGo for a query string.
+Core enrichment loop. Pops one target from the fetch queue, fetches raw data
+from the internet, and calls the LLM to produce or update the company summary.
+Proposes next targets (e.g. website URL after a web search), which are enqueued
+for the next iteration.
 
-|                   |                                                                 |
-| ----------------- | --------------------------------------------------------------- |
-| **Input**         | Query string (e.g. `"Infinite Orbits entreprise informatique"`) |
-| **Output**        | Raw text snippets from DDG                                      |
-| **Files written** | `raw_data/raw_ddg_<...>.txt`                                    |
-| **On error**      | `not_found`, `blocked`, `retryable` → terminal or manual retry  |
+Internally uses three **fetch tools** in sequence:
 
----
+- **`siren`** — registry data (name, NAF, headcount, city) → stored in frontmatter
+- **`ddg`** — DuckDuckGo search snippets for the company name
+- **`fetch_url`** _(not yet implemented)_ — main content from company website via `trafilatura`
 
-### `fetch_url` _(not yet implemented)_
+The LLM receives: raw fetch output + company profile (from frontmatter). It does
+**not** receive the user profile — summaries are objective descriptions, not
+filtered by current preferences.
 
-Fetches and extracts main content from a web page via `trafilatura`.
+|                         |                                                                          |
+| ----------------------- | ------------------------------------------------------------------------ |
+| **Input**               | fetch queue, Internet                                                    |
+| **Output**              | summaries, next targets → fetch queue                                    |
+| **LLM output status**   | `ok` · `no_data` · `not_relevant`                                        |
+| **Files written**       | `raw_data/raw_<tool>_<...>`, `summarize/sum_<...>_<ts>.json` (immutable) |
+| **`fetch.jsonl` event** | `summarize_done {uid, model, prompt_version, status, result_file}`       |
 
-|                   |                                                                          |
-| ----------------- | ------------------------------------------------------------------------ |
-| **Input**         | URL (from `new_targets` proposed by `llm_summarize`)                     |
-| **Output**        | Clean prose extracted from the page                                      |
-| **Files written** | `raw_data/raw_fetch_url_<...>.txt`                                       |
-| **On error**      | `not_found` (JS-heavy SPA, empty body), `blocked` (Cloudflare, LinkedIn) |
+`no_data` — raw input had no information beyond frontmatter. Node is done, no new targets enqueued.
 
----
-
-### `llm_summarize`
-
-Core LLM step. Reads raw fetch output and the current summary, returns an
-updated summary and proposed next targets.
-
-|                          |                                                                                       |
-| ------------------------ | ------------------------------------------------------------------------------------- |
-| **Input**                | Raw fetch output, current `summary.md` body, company profile block (from frontmatter) |
-| **Model**                | Configurable via `OPENROUTER_MODEL` / `MISTRAL_MODEL`                                 |
-| **Output status**        | `ok` · `no_data` · `not_relevant`                                                     |
-| **Files written**        | `summarize/sum_<tool>_<target>_<status>_<ts>.json` (one per run, immutable)           |
-| **`summary.md` updated** | Body overwritten (frontmatter preserved) — _to be versioned, see below_               |
-| **`fetch.jsonl` event**  | `summarize_done {uid, model, prompt_version, status, result_file}`                    |
-| **`new_targets`**        | List of `{tool, target}` pairs enqueued as new `put` events                           |
-
-`no_data` means the raw input contained no information beyond what is already in
-frontmatter. The node is considered done — no new targets are enqueued.
-
-`not_relevant` means the company does not match the search domain. Dead end — no
-new targets enqueued, node is discarded.
+`not_relevant` — company does not match the search domain. Dead end, discarded.
 
 ---
 
-### `review` _(manual step)_
+### `review()` _(manual step)_
 
-User reads `summary.md` body in the terminal and records a free-text reaction.
+User pages through a sample of summaries in the terminal and records a one-line
+free-text reaction per company. Not every summary is reviewed — only a sample.
 
-|                   |                                                              |
-| ----------------- | ------------------------------------------------------------ |
-| **Input**         | `summary.md` body, frontmatter (`name`, `city`, `headcount`) |
-| **Output**        | One-line reaction string                                     |
-| **Files written** | `reviews.jsonl` — append-only, one event per interaction     |
-| **Event fields**  | `{ts, reaction}` or `{ts, skip: true}`                       |
+|                   |                                                                       |
+| ----------------- | --------------------------------------------------------------------- |
+| **Input**         | summaries (sample), user                                              |
+| **Output**        | reactions                                                             |
+| **Files written** | `reviews.jsonl` — append-only, `{ts, reaction}` or `{ts, skip: true}` |
 
-A node is considered reviewed when its latest `reviews.jsonl` event has a
-non-empty `reaction`.
-
----
-
-### `profile update` _(not yet implemented)_
-
-LLM step. Synthesizes all unincorporated reactions into an updated `profile.md`.
-
-|                           |                                                                             |
-| ------------------------- | --------------------------------------------------------------------------- |
-| **Input**                 | `profile.md`, all `reviews.jsonl` reactions newer than `profile.updated_ts` |
-| **Output**                | Full updated profile text                                                   |
-| **Files written**         | `user_data/profile.md` (overwritten)                                        |
-| **Frontmatter field set** | `updated_ts` — used to track which reactions are already incorporated       |
+A node is considered reviewed when its latest `reviews.jsonl` event has a non-empty `reaction`.
 
 ---
 
-### `score` _(not yet implemented)_
+### `update_profile()` 🤖 _(not yet implemented)_
 
-LLM classification step. Scores a node against the current profile.
+Synthesizes new reactions (since last update) and the current profile into an
+updated profile. Only reactions and summaries newer than `profile.updated_ts`
+are included — already-incorporated signal is skipped.
+
+|                   |                                                                       |
+| ----------------- | --------------------------------------------------------------------- |
+| **Input**         | reactions (new), summaries (new), user profile (current)              |
+| **Output**        | user profile (updated)                                                |
+| **Files written** | `user_data/profile.md` (overwritten), `updated_ts` set in frontmatter |
+
+---
+
+### `score()` 🤖 _(not yet implemented)_
+
+Classifies each summary against the current user profile. Runs on all nodes
+with a stale or missing score after a profile update.
 
 |                            |                                                           |
 | -------------------------- | --------------------------------------------------------- |
-| **Input**                  | `summary.md` body, `profile.md`                           |
-| **Output**                 | `good` · `maybe` · `discard` · `enrich` + one-line reason |
+| **Input**                  | summaries, user profile                                   |
+| **Output**                 | inferred scores                                           |
+| **Score values**           | `good` · `maybe` · `discard` · `enrich` + one-line reason |
 | **Frontmatter fields set** | `score`, `score_reason`, `score_ts`, `score_profile_ts`   |
 
-`enrich` re-queues fetch steps when there is not enough information to decide.
-`score_profile_ts` enables staleness detection: if `profile.md` `updated_ts` is
-newer, the score needs recomputing.
+`enrich` — not enough information to decide; re-queues fetch targets.
+
+`discard` — clear non-match; node is removed from the active list.
+
+`score_profile_ts` enables staleness detection: if `profile.md` `updated_ts` is newer than `score_profile_ts`, the score needs recomputing.
 
 ---
 
