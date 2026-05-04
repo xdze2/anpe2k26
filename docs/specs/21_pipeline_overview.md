@@ -22,16 +22,16 @@ flowchart TD
     %% process steps
     BOOTSTRAP["bootstrap()"]
     RUN["🤖 fetch_and_summarize()"]
-    REVIEW["review()"]
+    REVIEW["user_review()"]
     PROFILE["🤖 update_profile()"]
-    SCORE["🤖 score()"]
+    EVAL["🤖 llm_reviews()"]
 
     %% data artifacts
     QUEUE[/"fetch queue"/]
     SUMMARIES[/"summaries"/]
-    REACTIONS[/"reactions"/]
+    REACTIONS[/"reviews"/]
     PROF_DATA[/"user profile"/]
-    SCORES[/"inferred scores"/]
+    SCORES[/"inferred reviews"/]
 
     DISCARD(["🗑️ discard"])
 
@@ -53,11 +53,13 @@ flowchart TD
     PROF_DATA --> PROFILE
     PROFILE --> PROF_DATA
 
-    PROF_DATA --> SCORE
-    SUMMARIES --> SCORE
-    SCORE --> SCORES
-    SCORE -->|enrich?| QUEUE
-    SCORE -->|discard| DISCARD
+    PROF_DATA --> EVAL
+    SUMMARIES --> EVAL
+    SCORES -->|interesting?| REVIEW
+    EVAL --> SCORES
+    SCORES -->|not enough data?| QUEUE
+    SCORES -->|discard| DISCARD
+
 
     %% styles
     classDef input  fill:#1e3a5f,stroke:#4a90d9,color:#a8d4ff
