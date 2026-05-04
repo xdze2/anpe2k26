@@ -53,6 +53,17 @@ flowchart TD
     SUMMARIES --> SCORE
     SCORE --> SCORES
     SCORE -->|enrich?| QUEUE
+
+    %% styles
+    classDef input  fill:#1e3a5f,stroke:#4a90d9,color:#a8d4ff
+    classDef step   fill:#1a2e2e,stroke:#4a9e8e,color:#a8e6da
+    classDef llm    fill:#1a2e2e,stroke:#4a9e8e,color:#a8e6da,stroke-width:2px,stroke-dasharray:5 3
+    classDef data   fill:#2e2010,stroke:#c8843a,color:#f0c070
+
+    class LISTING,INTERNET,USER input
+    class BOOTSTRAP,REVIEW step
+    class RUN,PROFILE,SCORE llm
+    class QUEUE,SUMMARIES,REACTIONS,PROF_DATA,SCORES data
 ```
 
 ---
