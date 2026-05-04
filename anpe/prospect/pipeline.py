@@ -24,7 +24,7 @@ from anpe.config import settings
 from anpe.node_dir import NODES_DIR, FetchEntry, NodeDir
 from anpe.prospect.errors import FetchBlockedError, FetchNotFoundError, FetchRetryableError
 from anpe.prospect.registry import FETCH_TOOLS
-from anpe.prospect.summarize import PROMPT_VERSION, llm_summarize
+from anpe.prospect.summarize import SUMMARIZE_VERSION, llm_summarize
 
 
 @dataclass
@@ -139,7 +139,7 @@ async def _run_process(node: NodeDir, entry: FetchEntry, raw_data: str, raw_file
     result_file = node.save_summarize_result(
         entry=entry,
         model=settings.mistral_model,
-        prompt_version=PROMPT_VERSION,
+        summarize_version=SUMMARIZE_VERSION,
         status=result.status,
         summary=result.summary,
         new_targets=new_targets,

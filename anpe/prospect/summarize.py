@@ -56,7 +56,8 @@ Rules:
   Do not repeat information already in the Company profile block.
 """
 
-PROMPT_VERSION = hashlib.sha1(_SYSTEM.encode()).hexdigest()[:6]
+_MODEL_NAME = "mistral-small-2603"
+SUMMARIZE_VERSION = hashlib.sha1((_SYSTEM + _MODEL_NAME).encode()).hexdigest()[:6]
 
 MAX_RETRIES = 3
 _RETRY_BASE_DELAY = 5.0  # seconds, doubles each attempt
@@ -79,7 +80,7 @@ class EnrichResult(BaseModel):
 
 
 _model = MistralModel(
-    "mistral-small-2603",
+    _MODEL_NAME,
     provider=MistralProvider(api_key=settings.mistral_api_key),
 )
 
