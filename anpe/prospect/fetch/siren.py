@@ -5,7 +5,7 @@ from __future__ import annotations
 import json
 
 from anpe.clients.siren import siren_fetch
-from anpe.prospect.summarize import SummarizeResult, FetchTarget
+from anpe.prospect.types import FetchTarget, SummarizeResult
 from anpe.tools.naf import _load_csv_index as _naf_index
 
 __all__ = ["siren_fetch", "siren_summarize"]
@@ -63,4 +63,5 @@ async def siren_summarize(raw_data: str, previous_summary: str, company_profile:
         new_targets=new_targets,
         frontmatter=fm,
         version="v1",
+        model="siren_api",
     )

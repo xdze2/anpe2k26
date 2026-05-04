@@ -19,8 +19,7 @@ import time
 from collections.abc import AsyncGenerator
 from dataclasses import dataclass, field
 
-from anpe.config import settings
-from anpe.node_dir import NODES_DIR, FetchEntry, NodeDir
+from anpe.node_dir import FetchEntry, NodeDir
 from anpe.prospect.errors import FetchBlockedError, FetchNotFoundError, FetchRetryableError
 from anpe.prospect.registry import FETCH_TOOLS
 
@@ -127,7 +126,7 @@ async def _run_process(node: NodeDir, entry: FetchEntry, raw_data: str, raw_file
     new_targets = [(t.tool, t.target) for t in result.new_targets]
     result_file = node.save_summarize_result(
         entry=entry,
-        model=settings.mistral_model,
+        model=result.model,
         summarize_version=result.version,
         status=result.status,
         summary=result.summary,
@@ -179,12 +178,6 @@ def _fmt_company_profile(fm: dict) -> str:  # type: ignore[type-arg]
     keys = ["name", "siren", "naf", "category", "headcount", "city"]
     lines = [f"{k.capitalize()}: {fm[k]}" for k in keys if k in fm]
     return "\n".join(lines)
-
-
-def _all_node_ids_by_ctime() -> list[str]:
-    """Return all node ids sorted by directory creation time (oldest first)."""
-    dirs = sorted(NODES_DIR.iterdir(), key=lambda p: p.stat().st_ctime)
-    return [p.name for p in dirs if p.is_dir()]
 
 
 async def run_batch(

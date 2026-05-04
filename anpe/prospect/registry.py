@@ -7,7 +7,8 @@ from dataclasses import dataclass
 
 from anpe.prospect.fetch.ddg import ddg_search
 from anpe.prospect.fetch.siren import siren_fetch, siren_summarize
-from anpe.prospect.summarize import SummarizeResult, ddg_summarize
+from anpe.prospect.summarize import ddg_summarize
+from anpe.prospect.types import SummarizeResult
 
 
 @dataclass

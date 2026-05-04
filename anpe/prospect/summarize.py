@@ -4,12 +4,12 @@ from __future__ import annotations
 
 import asyncio
 import hashlib
-from pydantic import BaseModel
 from pydantic_ai import Agent
 from pydantic_ai.models.mistral import MistralModel
 from pydantic_ai.providers.mistral import MistralProvider
 
 from anpe.config import settings
+from anpe.prospect.types import FetchTarget, SummarizeResult  # noqa: F401  (re-exported)
 
 _SYSTEM = """\
 You are a job-search prospecting assistant. You help build intelligence dossiers on
@@ -65,19 +65,6 @@ class LLMCreditsError(RuntimeError):
     """Raised on HTTP 402 — no credits, unretryable."""
 
 
-class FetchTarget(BaseModel):
-    tool: str
-    target: str
-
-
-class SummarizeResult(BaseModel):
-    status: str  # "ok" | "not_relevant" | "no_data"
-    summary: str
-    new_targets: list[FetchTarget]
-    frontmatter: dict = {}  # type: ignore[type-arg]  # structured fields to merge into summary.md
-    prompt: str = ""
-    version: str = ""
-
 
 _model = MistralModel(
     _MODEL_NAME,
@@ -112,6 +99,7 @@ async def ddg_summarize(
             output = result.output
             output.prompt = full_prompt
             output.version = SUMMARIZE_VERSION
+            output.model = _MODEL_NAME
             return output
         except Exception as e:
             msg = str(e)

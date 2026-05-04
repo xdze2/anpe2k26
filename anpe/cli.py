@@ -158,9 +158,9 @@ def prospect_list() -> None:
 
     Example: anpe prospect list
     """
-    from anpe.prospect.pipeline import _all_node_ids_by_ctime
+    from anpe.node_dir import all_node_ids_by_ctime
 
-    ids = _all_node_ids_by_ctime()
+    ids = all_node_ids_by_ctime()
     if not ids:
         console.print(" [dim]No nodes found.[/]")
         return
@@ -252,7 +252,8 @@ def prospect_run(
     anpe prospect run --all-nodes -n 10     explicit node selection
     anpe prospect run --all-nodes --until-done
     """
-    from anpe.prospect.pipeline import _all_node_ids_by_ctime, run_batch
+    from anpe.node_dir import all_node_ids_by_ctime
+from anpe.prospect.pipeline import run_batch
 
     if node_ids and all_nodes:
         raise click.UsageError("NODE_IDs and --all-nodes are mutually exclusive.")
@@ -260,11 +261,11 @@ def prospect_run(
         raise click.UsageError("-n and --until-done are mutually exclusive.")
 
     if all_nodes:
-        ids = _all_node_ids_by_ctime()
+        ids = all_node_ids_by_ctime()
     elif node_ids:
         ids = list(node_ids)
     else:
-        ids = _all_node_ids_by_ctime()
+        ids = all_node_ids_by_ctime()
 
     if not ids:
         console.print(" [dim]No nodes found.[/]")
@@ -420,11 +421,11 @@ def profile_update(dry_run: bool) -> None:
 
     Example: anpe profile update --dry-run
     """
-    from anpe.prospect.pipeline import _all_node_ids_by_ctime
+    from anpe.node_dir import all_node_ids_by_ctime
     from anpe.profile import read_profile
 
     reactions: list[str] = []
-    for node_id in _all_node_ids_by_ctime():
+    for node_id in all_node_ids_by_ctime():
         node = NodeDir(node_id)
         review = node.get_latest_review()
         if not review or not review.get("reaction"):

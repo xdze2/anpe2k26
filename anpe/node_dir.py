@@ -314,3 +314,11 @@ class NodeDir:
         else:
             text = body
         self._summary_file.write_text(text, encoding="utf-8")
+
+
+def all_node_ids_by_ctime() -> list[str]:
+    """Return all node ids sorted by directory creation time (oldest first)."""
+    if not NODES_DIR.exists():
+        return []
+    dirs = sorted(NODES_DIR.iterdir(), key=lambda p: p.stat().st_ctime)
+    return [p.name for p in dirs if p.is_dir()]
