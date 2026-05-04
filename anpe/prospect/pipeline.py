@@ -2,9 +2,9 @@
 
 State machine (per uid in fetch.jsonl):
 
-    put ──fetch──► fetch_done ──summarize──► summarize_done  (ok | no_data)
+    put ──fetch──► fetch_done ──summarize──► summarize_done          (ok | no_data)
          │                   │                   └─ enqueues new_targets
-         │                   └────────────► summarize_done  (not_relevant)
+         │                   └────────────► summarize_not_relevant  (not_relevant)
          │                                      └─ no new_targets enqueued
          ▼
     fetch_error | not_found | blocked | retryable   [terminal / manual retry]
@@ -69,7 +69,7 @@ async def enrich_step(node_id: str) -> StepLog:
         raw_file = node.save_raw(entry.tool, entry.target, raw_data, ext=ext)
         node.mark_fetch_done(entry, raw_file)
 
-    return await _run_process(node, entry, raw_data)
+    return await _run_process(node, entry, raw_data, raw_file)
 
 
 async def summarize_step(node_id: str, fetch_uid: str | None = None) -> StepLog:
@@ -98,10 +98,10 @@ async def summarize_step(node_id: str, fetch_uid: str | None = None) -> StepLog:
 
     raw_data = (node._raw_dir / raw_file).read_text(encoding="utf-8")
     print(f"[{node_id}] process  uid={entry.uid}  file={raw_file}")
-    return await _run_process(node, entry, raw_data)
+    return await _run_process(node, entry, raw_data, raw_file)
 
 
-async def _run_process(node: NodeDir, entry: FetchEntry, raw_data: str) -> StepLog:
+async def _run_process(node: NodeDir, entry: FetchEntry, raw_data: str, raw_file: str) -> StepLog:
     tool = FETCH_TOOLS.get(entry.tool)
     if tool is None:
         node.mark_summarize_error(entry, f"unknown tool: {entry.tool!r}")
@@ -139,14 +139,16 @@ async def _run_process(node: NodeDir, entry: FetchEntry, raw_data: str) -> StepL
     result_file = node.save_summarize_result(
         entry=entry,
         model=settings.mistral_model,
+        prompt_version=PROMPT_VERSION,
         status=result.status,
         summary=result.summary,
         new_targets=new_targets,
+        raw_file=raw_file,
         duration_s=duration_s,
     )
     node.mark_summarize_done(
-        entry, model=settings.mistral_model, status=result.status,
-        result_file=result_file, prompt_version=PROMPT_VERSION,
+        entry, result_file=result_file,
+        not_relevant=(result.status == "not_relevant"),
     )
 
     if result.frontmatter:

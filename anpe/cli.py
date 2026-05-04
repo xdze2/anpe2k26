@@ -173,6 +173,7 @@ def prospect_list() -> None:
         "retryable": "yellow",
         "blocked": "red",
         "summarize_done": "green",
+        "summarize_not_relevant": "yellow",
         "summarize_error": "red",
     }
 
@@ -353,6 +354,7 @@ def prospect_status(node_id: str) -> None:
         "retryable": "yellow",
         "blocked": "red",
         "summarize_done": "green",
+        "summarize_not_relevant": "yellow",
         "summarize_error": "red",
     }
 

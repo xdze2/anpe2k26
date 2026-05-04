@@ -1,7 +1,7 @@
 """Disk interface for a single prospect node.
 
 A node lives at USER_DATA_DIR/nodes/<node_id>/ and contains:
-  fetch.jsonl           — append-only state machine log; events: put | fetch_done | summarize_done | …
+  fetch.jsonl           — append-only state machine log; events: put | fetch_done | summarize_done | summarize_not_relevant | …
   summarize/<file>.json — one result file per process run, linked from fetch.jsonl
   summary.md            — current summary, overwritten on each update
   raw_data/<file>       — raw fetch output, one file per completed fetch
@@ -132,13 +132,10 @@ class NodeDir:
             {"event": "fetch_error", "uid": entry.uid, "detail": detail, "ts": _now()}
         )
 
-    def mark_summarize_done(
-        self, entry: FetchEntry, model: str, status: str, result_file: str, prompt_version: str = ""
-    ) -> None:
+    def mark_summarize_done(self, entry: FetchEntry, result_file: str, not_relevant: bool = False) -> None:
+        event = "summarize_not_relevant" if not_relevant else "summarize_done"
         self._append_fetch_event(
-            {"event": "summarize_done", "uid": entry.uid,
-             "model": model, "prompt_version": prompt_version,
-             "status": status, "result_file": result_file, "ts": _now()}
+            {"event": event, "uid": entry.uid, "result_file": result_file, "ts": _now()}
         )
 
     def mark_summarize_error(self, entry: FetchEntry, detail: str) -> None:
@@ -185,9 +182,11 @@ class NodeDir:
         self,
         entry: FetchEntry,
         model: str,
+        prompt_version: str,
         status: str,
         summary: str,
         new_targets: list[tuple[str, str]],
+        raw_file: str,
         duration_s: float | None = None,
     ) -> str:
         """Write one summarize result file. Returns the filename."""
@@ -199,7 +198,9 @@ class NodeDir:
         data = {
             "ts": _now(),
             "fetch_uid": entry.uid,
+            "raw_file": raw_file,
             "model": model,
+            "prompt_version": prompt_version,
             "status": status,
             "duration_s": duration_s,
             "summary": summary,
@@ -299,9 +300,9 @@ class NodeDir:
         return ev is not None and not ev.get("skip", False)
 
     def has_summarize_done(self) -> bool:
-        """True if any fetch cycle reached summarize_done with status ok or no_data."""
+        """True if any fetch cycle reached summarize_done (excludes not_relevant)."""
         for ev in self._load_fetch_events():
-            if ev.get("event") == "summarize_done" and ev.get("status") in ("ok", "no_data"):
+            if ev.get("event") == "summarize_done":
                 return True
         return False
 

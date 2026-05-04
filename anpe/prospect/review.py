@@ -26,7 +26,7 @@ def _get_next_targets(node: NodeDir) -> list[dict]:  # type: ignore[type-arg]
     import json
 
     for ev in reversed(node._load_fetch_events()):
-        if ev.get("event") == "summarize_done" and ev.get("result_file"):
+        if ev.get("event") in ("summarize_done", "summarize_not_relevant") and ev.get("result_file"):
             result_path = node._summarize_dir / ev["result_file"]
             if result_path.exists():
                 data = json.loads(result_path.read_text(encoding="utf-8"))
