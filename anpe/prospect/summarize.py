@@ -4,12 +4,59 @@ from __future__ import annotations
 
 import asyncio
 import hashlib
+import json
+from urllib.parse import urlparse
+
 from pydantic_ai import Agent
 from pydantic_ai.models.mistral import MistralModel
 from pydantic_ai.providers.mistral import MistralProvider
 
 from anpe.config import settings
-from anpe.prospect.types import FetchTarget, SummarizeResult  # noqa: F401  (re-exported)
+
+from anpe.prospect.types import (
+    FetchTarget,
+    SummarizeResult,
+)  # noqa: F401  (re-exported)
+
+DIRECTORY_BLACKLIST = {
+    # French company registries & legal directories
+    "societe.com",
+    "verif.com",
+    "sirene.data.gouv.fr",
+    "infogreffe.fr",
+    "pagesjaunes.fr",
+    "kompass.com",
+    "europages.fr",
+    "pappers.fr",
+    "infonet.fr",
+    "lagazettefrance.fr",
+    "hoodspot.fr",
+    "eterritoire.fr",
+    "annuairefrancais.fr",
+    "datalegal.fr",
+    "codes-naf.com",
+    "rubypayeur.com",
+    "manageo.fr",
+    "legalin.fr",
+    "adr-st-o.com",
+    "mappy.com",
+    "grokipedia.com",
+    "youtube.com",
+    "pinterest.com",
+    "alibaba.com",
+    # Professional networks
+    "viadeo.com",
+    "viadeo.journaldunet.com",
+    # Startup & company aggregators
+    "crunchbase.com",
+    "airsaas.io",
+    "sortlist.com",
+    "motherbase.io",
+    # Job boards
+    "jooble.org",
+    "jobteaser.com",
+}
+
 
 _SYSTEM = """\
 You are a job-search prospecting assistant. You help build intelligence dossiers on
@@ -55,7 +102,8 @@ Rules:
 """
 
 _MODEL_NAME = "mistral-small-2603"
-SUMMARIZE_VERSION = hashlib.sha1((_SYSTEM + _MODEL_NAME).encode()).hexdigest()[:6]
+_BLACKLIST_KEY = ",".join(sorted(DIRECTORY_BLACKLIST))
+SUMMARIZE_VERSION = hashlib.sha1((_SYSTEM + _MODEL_NAME + _BLACKLIST_KEY).encode()).hexdigest()[:6]
 
 MAX_RETRIES = 3
 _RETRY_BASE_DELAY = 5.0  # seconds, doubles each attempt
@@ -63,7 +111,6 @@ _RETRY_BASE_DELAY = 5.0  # seconds, doubles each attempt
 
 class LLMCreditsError(RuntimeError):
     """Raised on HTTP 402 — no credits, unretryable."""
-
 
 
 _model = MistralModel(
@@ -78,6 +125,21 @@ _agent: Agent[None, SummarizeResult] = Agent(
 )
 
 
+def _format_ddg_results(raw_json: str) -> str:
+    results = json.loads(raw_json)
+    lines: list[str] = []
+    for r in results:
+        href = r.get("href", "")
+        domain = urlparse(href).hostname or ""
+        if domain in DIRECTORY_BLACKLIST:
+            continue
+        lines.append(r.get("title", ""))
+        lines.append(href)
+        lines.append(r.get("body", ""))
+        lines.append("")
+    return "\n".join(lines)
+
+
 async def ddg_summarize(
     raw_data: str,
     previous_summary: str,
@@ -88,7 +150,7 @@ async def ddg_summarize(
         user_prompt += f"## Company profile\n\n{company_profile}\n\n"
     if previous_summary:
         user_prompt += f"## Previous summary\n\n{previous_summary}\n\n"
-    user_prompt += f"## New data\n\n{raw_data}"
+    user_prompt += f"## New data\n\n{_format_ddg_results(raw_data)}"
 
     full_prompt = f"## System prompt\n\n{_SYSTEM}\n## User prompt\n\n{user_prompt}"
 
@@ -108,9 +170,11 @@ async def ddg_summarize(
                     "No LLM credits — top up at https://console.mistral.ai/"
                 ) from e
             if "429" in msg:
-                delay = _RETRY_BASE_DELAY * (2 ** attempt)
-                print(f"[llm] rate-limited (429), retrying in {delay:.0f}s "
-                      f"(attempt {attempt + 1}/{MAX_RETRIES})")
+                delay = _RETRY_BASE_DELAY * (2**attempt)
+                print(
+                    f"[llm] rate-limited (429), retrying in {delay:.0f}s "
+                    f"(attempt {attempt + 1}/{MAX_RETRIES})"
+                )
                 await asyncio.sleep(delay)
                 last_error = e
                 continue

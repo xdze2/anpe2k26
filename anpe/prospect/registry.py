@@ -19,7 +19,7 @@ class FetchTool:
 
 
 FETCH_TOOLS: dict[str, FetchTool] = {
-    "ddg": FetchTool(fetch=ddg_search, summarize=ddg_summarize),
+    "ddg": FetchTool(fetch=ddg_search, summarize=ddg_summarize, raw_ext="json"),
     "siren": FetchTool(fetch=siren_fetch, summarize=siren_summarize, raw_ext="json"),
     # "fetch": FetchTool(fetch=http_fetch, summarize=ddg_summarize),  # deferred
     # "tavily": FetchTool(fetch=tavily_fetch, summarize=ddg_summarize),  # deferred
