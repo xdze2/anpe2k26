@@ -22,22 +22,22 @@ An LLM assistant can save you hours of unfocused web searching and help you stay
 
 The SIRENE dataset contains every registered company in France — tens of thousands of
 candidates once filtered by sector and geography. But SIRENE is purely administrative:
-a SIREN number, a NAF code, a location, (plus other legal data). No website, no description, no
-sense of what the company actually does, and if you would be interested to work with them. There is no pre-existing signal to query
-against — you can't search for "interesting AI startup near Bordeaux" because that field doesn't exist.
+a SIREN number, a NAF code, a location, plus other legal data. No website, no description,
+no sense of what the company actually does or whether you'd want to work there. There is
+no pre-existing signal to query against — you can't search for "interesting AI startup
+near Bordeaux" because that field doesn't exist.
 
-The challenge is not finding candidates (aka company names) — they are all already there. The challenge is
+The challenge is not finding candidates — they are all already there. The challenge is
 navigating a space that is too large to evaluate directly, and too undifferentiated to
-filter by relevance before you've done the work of enriching it.
-
-Also it is an exploration process, we don't known what we are looking for yet, it will be a surprise.
+filter by relevance before enriching it. And it is genuinely an exploration: you don't
+fully know what you're looking for yet — the right match may be a surprise.
 
 Enrichment is how you generate signal: fetch a website, run a web search, ask an LLM
 to summarize what it found. Each step transforms a dry administrative record into
-something you can actually judge. But enrichment has a cost — in time, in API calls, on noise accumulation —
-so it can't be applied blindly to every candidate.
+something you can actually judge. But enrichment has a cost — in time, in API calls,
+in noise accumulation — so it can't be applied blindly to every candidate.
 
-This is why the assisitent is structured as an exploration loop rather than a batch
+This is why the assistant is structured as an exploration loop rather than a batch
 process. At each iteration, a small number of candidates get enriched, evaluated
 against your profile, and surfaced to you. Your reactions — interest, rejection, a
 remark — update the profile and guide which candidates are worth exploring next.
