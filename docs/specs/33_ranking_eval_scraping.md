@@ -1,5 +1,6 @@
 ---
-status: draft
+status: outdated
+superseded_by: 34_llm_eval_step.md, 35_review_and_profile_update.md, 36_web_fetch_enrichment.md
 ---
 
 # Ranking, eval, and web scraping
