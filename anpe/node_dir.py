@@ -3,7 +3,6 @@
 A node lives at USER_DATA_DIR/nodes/<node_id>/ and contains:
   fetch.jsonl           — append-only state machine log; events: put | fetch_done | summarize_done | summarize_not_relevant | …
   summarize/<file>.json — one result file per process run, linked from fetch.jsonl
-  summary.md            — current summary, overwritten on each update
   raw_data/<file>       — raw fetch output, one file per completed fetch
 """
 
@@ -39,7 +38,6 @@ class NodeDir:
         self.node_id = node_id
         self.path = NODES_DIR / node_id
         self._fetch_file = self.path / "fetch.jsonl"
-        self._summary_file = self.path / "summary.md"
         self._raw_dir = self.path / "raw_data"
         self._summarize_dir = self.path / "summarize"
         self._eval_queue_file = self.path / "eval_queue.jsonl"
@@ -249,63 +247,70 @@ class NodeDir:
         return filename
 
     # ------------------------------------------------------------------
-    # Summary (frontmatter + body)
+    # Summary (from latest sum_*.json)
     # ------------------------------------------------------------------
 
-    @staticmethod
-    def _split_frontmatter(text: str) -> tuple[str, str]:
-        """Split '---\\n...\\n---\\nbody' into (frontmatter_block, body).
-
-        Returns ("", text) if no frontmatter is present.
-        """
-        if not text.startswith("---\n"):
-            return "", text
-        end = text.find("\n---\n", 4)
-        if end == -1:
-            return "", text
-        return text[4:end], text[end + 5:]
-
-    def get_frontmatter(self) -> dict:  # type: ignore[type-arg]
-        """Return parsed YAML frontmatter, or {} if none."""
-        import yaml
-        if not self._summary_file.exists():
-            return {}
-        raw = self._summary_file.read_text(encoding="utf-8")
-        fm, _ = self._split_frontmatter(raw)
-        return yaml.safe_load(fm) or {} if fm else {}
-
-    def set_frontmatter(self, data: dict) -> None:  # type: ignore[type-arg]
-        """Merge data into frontmatter, preserving the existing body."""
-        import yaml
-        if self._summary_file.exists():
-            raw = self._summary_file.read_text(encoding="utf-8")
-            existing_fm, body = self._split_frontmatter(raw)
-            current = yaml.safe_load(existing_fm) or {} if existing_fm else {}
-        else:
-            current, body = {}, ""
-        current.update(data)
-        self._write_summary(current, body)
-
-    def get_summary_body(self) -> str:
-        """Return only the markdown body (no frontmatter)."""
-        if not self._summary_file.exists():
+    def get_latest_summary(self) -> str:
+        """Return the 'summary' field from the latest sum_*.json, or ''."""
+        rel = self.get_latest_sum_file()
+        if not rel:
             return ""
-        raw = self._summary_file.read_text(encoding="utf-8")
-        _, body = self._split_frontmatter(raw)
-        return body
+        path = self._summarize_dir / rel
+        if not path.exists():
+            return ""
+        return json.loads(path.read_text(encoding="utf-8")).get("summary", "")
 
-    def save_summary(self, body: str) -> None:
-        """Overwrite the body, preserving existing frontmatter."""
-        import yaml
-        if self._summary_file.exists():
-            raw = self._summary_file.read_text(encoding="utf-8")
-            existing_fm, _ = self._split_frontmatter(raw)
-            fm = yaml.safe_load(existing_fm) or {} if existing_fm else {}
-        else:
-            fm = {}
-        if not self.path.exists():
-            self.init()
-        self._write_summary(fm, body)
+    def get_next_targets(self) -> list[dict]:  # type: ignore[type-arg]
+        """Return new_targets from the latest summarize_done result file, or []."""
+        for ev in reversed(self._load_fetch_events()):
+            if ev.get("event") in ("summarize_done", "summarize_not_relevant") and ev.get("result_file"):
+                path = self._summarize_dir / ev["result_file"]
+                if path.exists():
+                    return json.loads(path.read_text(encoding="utf-8")).get("new_targets", [])
+        return []
+
+    def get_siren_meta(self) -> dict:  # type: ignore[type-arg]
+        """Return structured metadata extracted from the latest raw SIREN file.
+
+        Returns a subset of keys: name, city, naf, headcount, siren, category.
+        Returns {} if no SIREN raw file exists.
+        """
+        if not self._raw_dir.exists():
+            return {}
+        candidates = sorted(self._raw_dir.glob("raw_siren_*.json"))
+        if not candidates:
+            return {}
+        raw = json.loads(candidates[-1].read_text(encoding="utf-8"))
+        siege = raw.get("siege", {})
+
+        _HEADCOUNT_BANDS: dict[str, str] = {
+            "00": "0", "01": "1-2", "02": "3-5", "03": "6-9",
+            "11": "10-19", "12": "20-49", "21": "50-99",
+            "22": "100-199", "31": "200-249", "32": "250-499",
+            "41": "500-999", "42": "1 000-1 999", "51": "2 000-4 999",
+            "52": "5 000-9 999", "53": "10 000+",
+        }
+
+        nom_legal = raw.get("nom_complet", "")
+        nom_commercial = siege.get("nom_commercial", "") or nom_legal
+        naf_code = raw.get("activite_principale", "")
+        size_code = raw.get("tranche_effectif_salarie", "")
+
+        meta: dict = {}  # type: ignore[type-arg]
+        if nom_commercial:
+            meta["name"] = nom_commercial
+        if raw.get("siren"):
+            meta["siren"] = raw["siren"]
+        if naf_code:
+            meta["naf"] = naf_code
+        if raw.get("categorie_entreprise"):
+            meta["category"] = raw["categorie_entreprise"]
+        if size_code:
+            meta["headcount"] = _HEADCOUNT_BANDS.get(size_code, size_code)
+        city = siege.get("libelle_commune", "") or siege.get("commune", "")
+        if city:
+            meta["city"] = city
+        return meta
 
     # ------------------------------------------------------------------
     # Reviews log
@@ -345,16 +350,13 @@ class NodeDir:
                 return True
         return False
 
-    def _write_summary(self, fm: dict, body: str) -> None:  # type: ignore[type-arg]
-        import yaml
-        if not self.path.exists():
-            self.init()
-        if fm:
-            text = f"---\n{yaml.dump(fm, allow_unicode=True, sort_keys=False)}---\n{body}"
-        else:
-            text = body
-        self._summary_file.write_text(text, encoding="utf-8")
-
+    def has_ddg_summarize_done(self) -> bool:
+        """True if any ddg fetch cycle reached summarize_done."""
+        puts, latest = self._latest_event_per_uid()
+        for uid, last in latest.items():
+            if last["event"] == "summarize_done" and puts.get(uid, {}).get("tool") == "ddg":
+                return True
+        return False
 
     # ------------------------------------------------------------------
     # Eval queue

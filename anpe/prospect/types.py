@@ -14,7 +14,6 @@ class SummarizeResult(BaseModel):
     status: str  # "ok" | "not_relevant" | "no_data"
     summary: str
     new_targets: list[FetchTarget]
-    frontmatter: dict = {}  # type: ignore[type-arg]
     prompt: str = ""
     version: str = ""
     model: str = ""

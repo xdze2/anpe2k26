@@ -18,20 +18,9 @@ def _nodes_to_review() -> list[NodeDir]:
         return []
     dirs = sorted(NODES_DIR.iterdir(), key=lambda p: p.stat().st_ctime)
     nodes = [NodeDir(p.name) for p in dirs if p.is_dir()]
-    return [n for n in nodes if n.has_summarize_done() and not n.is_reviewed()]
+    return [n for n in nodes if n.has_ddg_summarize_done() and not n.is_reviewed()]
 
 
-def _get_next_targets(node: NodeDir) -> list[dict]:  # type: ignore[type-arg]
-    """Return new_targets from the latest summarize_done result file."""
-    import json
-
-    for ev in reversed(node._load_fetch_events()):
-        if ev.get("event") in ("summarize_done", "summarize_not_relevant") and ev.get("result_file"):
-            result_path = node._summarize_dir / ev["result_file"]
-            if result_path.exists():
-                data = json.loads(result_path.read_text(encoding="utf-8"))
-                return data.get("new_targets", [])
-    return []
 
 
 def run_review() -> None:
@@ -44,18 +33,18 @@ def run_review() -> None:
     console.print()
 
     for i, node in enumerate(nodes, 1):
-        fm = node.get_frontmatter()
-        name = fm.get("name", node.node_id)
+        siren = node.get_siren_meta()
+        name = siren.get("name", node.node_id)
         meta_parts = [p for p in [
-            fm.get("city"),
-            fm.get("headcount") and f"{fm['headcount']} pers.",
-            fm.get("naf"),
+            siren.get("city"),
+            siren.get("headcount") and f"{siren['headcount']} pers.",
+            siren.get("naf"),
         ] if p]
         meta = "  ·  ".join(str(p) for p in meta_parts)
 
-        body = node.get_summary_body().strip()
+        body = node.get_latest_summary().strip()
 
-        next_targets = _get_next_targets(node)
+        next_targets = node.get_next_targets()
 
         console.print(Rule(f"[bold]{i}/{len(nodes)}[/]  [cyan]{name}[/]  [dim]{meta}[/]"))
         console.print()

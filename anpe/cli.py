@@ -8,6 +8,9 @@ from typing import TYPE_CHECKING
 
 import click
 from rich.console import Console
+from rich.markdown import Markdown
+from rich.padding import Padding
+from rich.rule import Rule
 from rich.text import Text
 
 from anpe.node_dir import NodeDir
@@ -188,8 +191,8 @@ def prospect_list() -> None:
         last_event = rows[-1]["last_event"] if rows else "empty"
         style = _STATUS_STYLE.get(last_event, "white")
 
-        fm = node.get_frontmatter()
-        name = fm.get("name") or node_id
+        siren = node.get_siren_meta()
+        name = siren.get("name") or node_id
 
         pending_tag = f"  [yellow]{pending} pending[/]" if pending else ""
 
@@ -370,6 +373,75 @@ def prospect_status(node_id: str) -> None:
             f" [dim]{row['uid']}[/]  [bold]{row['tool']}[/]  {target_display}"
             f"  [{style}]{row['last_event']}[/]  [dim]{ts}[/]"
         )
+
+
+@prospect_group.command("show")
+@click.argument("node_id")
+def prospect_show(node_id: str) -> None:
+    """Show full summary and eval result for a node.
+
+    Example: anpe prospect show acme_123456789
+    """
+    node = NodeDir(node_id)
+    if not node.exists():
+        console.print(f" [bold red]Error[/] node {node_id!r} not found")
+        return
+
+    siren = node.get_siren_meta()
+    name = siren.get("name") or node_id
+    meta_parts = [p for p in [
+        siren.get("city"),
+        siren.get("headcount") and f"{siren['headcount']} pers.",
+        siren.get("naf"),
+        siren.get("siren"),
+    ] if p]
+    meta = "  ·  ".join(str(p) for p in meta_parts)
+
+    console.print(Rule(f"[bold]{name}[/]  [dim]{meta}[/]"))
+
+    body = node.get_latest_summary().strip()
+    if body:
+        console.print()
+        console.print(Padding(Markdown(body), pad=(0, 4)))
+    else:
+        console.print()
+        console.print(" [dim]No summary yet.[/]")
+
+    eval_result = node.get_latest_eval_result()
+    if eval_result:
+        _SCORE_STYLE = {
+            "good": "bold green",
+            "maybe": "yellow",
+            "discard": "dim red",
+            "enrich": "cyan",
+        }
+        score = eval_result.get("score", "")
+        score_style = _SCORE_STYLE.get(score, "white")
+        console.print()
+        console.print(Rule("[dim]eval[/]"))
+        uncertainty = eval_result.get("uncertainty", "")
+        console.print(f" score: [{score_style}]{score}[/]  uncertainty: [dim]{uncertainty}[/]")
+        if eval_result.get("fit"):
+            console.print(f" fit:   [dim]{eval_result['fit']}[/]")
+        dealbreakers = eval_result.get("dealbreakers", [])
+        if dealbreakers:
+            console.print(" dealbreakers:")
+            for db in dealbreakers:
+                console.print(f"   [dim red]· {db}[/]")
+
+    next_targets = node.get_next_targets()
+    if next_targets:
+        console.print()
+        console.print(Rule("[dim]next targets[/]"))
+        for t in next_targets:
+            console.print(f"   [dim cyan][{t['tool']}][/] [dim]{t['target']}[/]")
+
+    review = node.get_latest_review()
+    if review and review.get("reaction"):
+        console.print()
+        console.print(f" reaction: [dim green]\"{review['reaction']}\"[/]")
+
+    console.print()
 
 
 @prospect_group.command("review")
@@ -733,12 +805,12 @@ def profile_update(dry_run: bool) -> None:
         review = node.get_latest_review()
         if not review or not review.get("reaction"):
             continue
-        fm = node.get_frontmatter()
-        name = fm.get("name") or node_id
-        parts = [p for p in [fm.get("city"), fm.get("headcount")] if p]
+        siren = node.get_siren_meta()
+        name = siren.get("name") or node_id
+        parts = [p for p in [siren.get("city"), siren.get("headcount")] if p]
         meta = " · ".join(str(p) for p in parts)
         reaction = review["reaction"]
-        summary = node.get_summary_body().strip()
+        summary = node.get_latest_summary().strip()
         summary_snippet = " ".join(summary.split())[:150] if summary else ""
         line = f"- [{name}] {meta} — \"{reaction}\""
         if summary_snippet:

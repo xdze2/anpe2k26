@@ -77,12 +77,12 @@ async def _run_process(node: NodeDir, entry: FetchEntry, raw_data: str, raw_file
         return StepLog(node_id=node.node_id, tool=entry.tool, target=entry.target,
                        status="summarize_error")
 
-    previous_summary = node.get_summary_body()
+    previous_summary = node.get_latest_summary()
     print(f"[{node.node_id}] process  [{entry.tool}]  (previous: {len(previous_summary)} chars)")
 
     try:
         t0 = time.monotonic()
-        company_profile = _fmt_company_profile(node.get_frontmatter())
+        company_profile = _fmt_company_profile(node.get_siren_meta())
         result = await tool.summarize(raw_data, previous_summary, company_profile)
         duration_s = round(time.monotonic() - t0, 2)
     except Exception as e:
@@ -112,14 +112,9 @@ async def _run_process(node: NodeDir, entry: FetchEntry, raw_data: str, raw_file
         not_relevant=(result.status == "not_relevant"),
     )
 
-    if result.frontmatter:
-        node.set_frontmatter(result.frontmatter)
-
     if result.status == "not_relevant":
         return StepLog(node_id=node.node_id, tool=entry.tool, target=entry.target,
                        status="not_relevant", new_targets=new_targets)
-
-    node.save_summary(result.summary)
 
     for tool_slug, target in new_targets:
         if tool_slug in FETCH_TOOLS:

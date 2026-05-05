@@ -41,7 +41,6 @@ def _make_row(nom: str, siren: str, siret: str = "") -> dict:
 
 def test_seed_creates_nodes(tmp_path, monkeypatch):
     monkeypatch.setattr("anpe.node_dir.NODES_DIR", tmp_path / "nodes")
-    monkeypatch.setattr("anpe.prospect.seed.NODES_DIR", tmp_path / "nodes")
 
     csv_path = tmp_path / "listing.csv"
     _write_csv(csv_path, [
@@ -60,7 +59,6 @@ def test_seed_creates_nodes(tmp_path, monkeypatch):
 def test_seed_skips_existing(tmp_path, monkeypatch):
     nodes_dir = tmp_path / "nodes"
     monkeypatch.setattr("anpe.node_dir.NODES_DIR", nodes_dir)
-    monkeypatch.setattr("anpe.prospect.seed.NODES_DIR", nodes_dir)
 
     # Pre-create the first node
     (nodes_dir / "alpha_111111111").mkdir(parents=True)
@@ -81,7 +79,6 @@ def test_seed_skips_existing(tmp_path, monkeypatch):
 def test_seed_deduplicates_csv(tmp_path, monkeypatch):
     """Same SIREN appearing twice (multi-établissement) counts as one candidate."""
     monkeypatch.setattr("anpe.node_dir.NODES_DIR", tmp_path / "nodes")
-    monkeypatch.setattr("anpe.prospect.seed.NODES_DIR", tmp_path / "nodes")
 
     csv_path = tmp_path / "listing.csv"
     _write_csv(csv_path, [

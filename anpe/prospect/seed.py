@@ -7,7 +7,7 @@ import re
 import unicodedata
 from pathlib import Path
 
-from anpe.node_dir import NODES_DIR, NodeDir
+from anpe.node_dir import NodeDir
 
 
 def slugify(text: str) -> str:
@@ -37,7 +37,6 @@ def seed_from_listing(csv_path: Path, count: int) -> list[str]:
     for row in to_create:
         node = NodeDir(row["node_id"])
         node.init()
-        node.set_frontmatter({"siren": row["siren"], "name": row["nom_complet"]})
         node.append_target("siren", row["siren"])
         created.append(row["node_id"])
 
