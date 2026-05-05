@@ -1,5 +1,5 @@
 ---
-status: draft
+status: outdated
 ---
 
 # Model choice for `llm_summarize`
@@ -23,24 +23,24 @@ Context window needed is moderate — a few thousand tokens per call.
 Script: `scripts/eval_summarize.py`
 Fixtures: `scripts/eval_fixtures/` — 6 cases:
 
-| id | type | expected |
-|---|---|---|
-| `nexalia_noisy` | DDG — real company buried in association noise | `ok`, 1-2 targets |
-| `vectorix_clean` | DDG — clean results with obvious URLs | `ok`, 1-2 targets |
-| `aquamont_irrelevant` | DDG — large multinational | `not_relevant` |
-| `arkanis_irrelevant` | DDG — large defense group + philosopher noise | `not_relevant` |
-| `empty_input` | empty string | `no_data`, no hallucinated targets |
-| `truncated_html` | mid-sentence cut HTML page | `ok` with partial info, or `no_data` |
+| id                    | type                                           | expected                             |
+| --------------------- | ---------------------------------------------- | ------------------------------------ |
+| `nexalia_noisy`       | DDG — real company buried in association noise | `ok`, 1-2 targets                    |
+| `vectorix_clean`      | DDG — clean results with obvious URLs          | `ok`, 1-2 targets                    |
+| `aquamont_irrelevant` | DDG — large multinational                      | `not_relevant`                       |
+| `arkanis_irrelevant`  | DDG — large defense group + philosopher noise  | `not_relevant`                       |
+| `empty_input`         | empty string                                   | `no_data`, no hallucinated targets   |
+| `truncated_html`      | mid-sentence cut HTML page                     | `ok` with partial info, or `no_data` |
 
 Results saved to `scripts/eval_results/<timestamp>.jsonl`.
 
 ## Candidates
 
-| model | params (active) | context | notes |
-|---|---|---|---|
-| `google/gemma-4-26b-a4b-it:free` | 26B MoE (3.8B active) | 256K | fast, native function calling |
-| `google/gemma-4-31b-it:free` | 31B dense | 256K | strong instruction following, multilingual |
-| `nvidia/nemotron-3-super-120b-a12b:free` | 120B MoE (12B active) | 1M | strongest reasoning, slower |
+| model                                    | params (active)       | context | notes                                      |
+| ---------------------------------------- | --------------------- | ------- | ------------------------------------------ |
+| `google/gemma-4-26b-a4b-it:free`         | 26B MoE (3.8B active) | 256K    | fast, native function calling              |
+| `google/gemma-4-31b-it:free`             | 31B dense             | 256K    | strong instruction following, multilingual |
+| `nvidia/nemotron-3-super-120b-a12b:free` | 120B MoE (12B active) | 1M      | strongest reasoning, slower                |
 
 ## Results so far (2026-05-01)
 
@@ -55,7 +55,7 @@ the prompt tuning target, not a model capability gap.
 concise summaries, 0 targets. Relevance filtering works well.
 
 **Nemotron on `empty_input`:** `no_data` correctly, but hallucinated a generic DDG query
-as a target. Fixed in prompt: *"If status is `no_data`, new_targets must be empty."*
+as a target. Fixed in prompt: _"If status is `no_data`, new_targets must be empty."_
 
 ## Open questions
 
