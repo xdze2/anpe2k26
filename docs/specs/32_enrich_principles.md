@@ -6,21 +6,6 @@ status: draft
 
 High-level design. How the vision translates into a system: the main components, data flows, and logic. No storage or implementation detail.
 
-## Data vault
-
-Two kinds of persistent state:
-
-**User profile** — what the user is looking for: target roles, preferred company sizes, sectors, dealbreakers. Read at startup; updated as the user reacts to companies. Short by design — an interpretation of the user's intent, not a log of everything they've ever said.
-
-**Nodes** — one node per candidate company. A node starts as a bare seed (a SIREN code) and grows as information is collected. It holds:
-
-- a summary of everything gathered so far, written from the user's point of view
-- the user's triage verdict
-- the current list of next fetch candidates (updated after each eval)
-- all raw fetched data (never deleted — kept for cache, replayability, and debugging)
-
----
-
 ## Enrichment pipeline
 
 One entry point: `enrich(node)`. It runs one fetch → eval cycle and updates the node.

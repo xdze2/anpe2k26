@@ -2,6 +2,8 @@
 status: outdated
 ---
 
+**Outdated: now Mistral AI is used.**
+
 # Model choice for `llm_summarize`
 
 ## Task profile
