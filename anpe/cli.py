@@ -198,9 +198,24 @@ def prospect_list() -> None:
         if review and review.get("reaction"):
             reaction_tag = f"  [dim green]\"{review['reaction']}\"[/]"
 
+        eval_tag = ""
+        eval_result = node.get_latest_eval_result()
+        if eval_result:
+            _SCORE_STYLE = {
+                "good": "bold green",
+                "maybe": "yellow",
+                "discard": "dim red",
+                "enrich": "cyan",
+            }
+            score = eval_result.get("score", "")
+            score_style = _SCORE_STYLE.get(score, "white")
+            fit = eval_result.get("fit", "")
+            fit_snippet = fit[:60] + "…" if len(fit) > 60 else fit
+            eval_tag = f"  [dim]~[/][{score_style}]{score}[/]  [dim]{fit_snippet}[/]"
+
         console.print(
             f" [bold]{name}[/]  [{style}]{last_event}[/]"
-            f"{pending_tag}{reaction_tag}"
+            f"{pending_tag}{reaction_tag}{eval_tag}"
         )
 
 
