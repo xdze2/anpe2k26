@@ -2,9 +2,11 @@
 
 State machine (per node, in eval_queue.jsonl):
 
-    put ──eval──► eval_done     [terminal until next put]
+    put ──eval──► eval_done        [terminal until next put]
         │
-        └────────► eval_error   [retryable — pop_eval_pending picks it up again]
+        ├────────► eval_discarded  [terminal — no scorable summary]
+        │
+        └────────► eval_error      [retryable — pop_eval_pending picks it up again]
 
 State = last event in the file.
 """
@@ -53,7 +55,7 @@ async def eval_step(node_id: str) -> EvalStepLog:
     sum_data = json.loads(sum_path.read_text(encoding="utf-8"))
     summary = sum_data.get("summary", "")
     if not summary:
-        node.mark_eval_error(f"no summary in {sum_file}")
+        node.mark_eval_discarded(f"no summary in {sum_file}")
         return EvalStepLog(node_id=node_id, status="no_summary")
 
     profile_text = profile_path.read_text(encoding="utf-8")

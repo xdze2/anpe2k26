@@ -31,11 +31,12 @@ nodes/<node_id>/
 
 ### eval_queue.jsonl — event types
 
-| event        | meaning                                                        |
-| ------------ | -------------------------------------------------------------- |
-| `put`        | node enqueued for eval; carries `sum_file`, `profile_file`     |
-| `eval_done`  | result saved; carries `result_file` path                       |
-| `eval_error` | LLM call failed; retryable                                     |
+| event             | meaning                                                        |
+| ----------------- | -------------------------------------------------------------- |
+| `put`             | node enqueued for eval; carries `sum_file`, `profile_file`     |
+| `eval_done`       | result saved; carries `result_file` path; terminal             |
+| `eval_discarded`  | no scorable summary (e.g. `not_relevant`); terminal            |
+| `eval_error`      | LLM call failed; retryable                                     |
 
 **State = last event in the file.** There is no uid — the queue is a linear
 sequence of requests for a single node. A new `put` after `eval_done` signals
@@ -43,7 +44,8 @@ a reeval (e.g. after a profile update); no separate `reeval` event type is
 needed, as the log tells the story: `eval_done` → `put` with a newer
 `profile_file`.
 
-Pending = last event is `put` or `eval_error`.
+Pending = last event is `put` or `eval_error`.  
+Terminal = last event is `eval_done` or `eval_discarded` (not retried).
 
 Example log after two eval cycles:
 

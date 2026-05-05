@@ -389,15 +389,35 @@ class NodeDir:
             {"event": "eval_error", "detail": detail, "ts": _now()}
         )
 
+    def mark_eval_discarded(self, reason: str) -> None:
+        self._append_eval_event(
+            {"event": "eval_discarded", "reason": reason, "ts": _now()}
+        )
+
     def pop_eval_pending(self) -> dict | None:  # type: ignore[type-arg]
         """Return the last eval queue event if the node is pending eval, else None.
 
         Pending = last event is 'put' or 'eval_error'.
+        Terminal (not retried) = 'eval_done' or 'eval_discarded'.
+        When last event is 'eval_error', walk back to find the most recent 'put'.
         """
-        last = self._last_eval_event()
-        if last is None or last["event"] not in ("put", "eval_error"):
+        if not self._eval_queue_file.exists():
             return None
-        return last
+        lines = [
+            line for line in self._eval_queue_file.read_text(encoding="utf-8").splitlines()
+            if line.strip()
+        ]
+        if not lines:
+            return None
+        last = json.loads(lines[-1])
+        if last["event"] == "put":
+            return last
+        if last["event"] == "eval_error":
+            for line in reversed(lines):
+                ev = json.loads(line)
+                if ev["event"] == "put":
+                    return ev
+        return None
 
     def get_latest_eval_result(self) -> dict | None:  # type: ignore[type-arg]
         """Return the parsed JSON of the most recent eval_done result, or None."""
