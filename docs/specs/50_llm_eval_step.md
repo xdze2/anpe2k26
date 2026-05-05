@@ -31,22 +31,34 @@ nodes/<node_id>/
 
 ### eval_queue.jsonl — event types
 
-| event        | meaning                                                           |
-| ------------ | ----------------------------------------------------------------- |
-| `put`        | node enqueued for eval; carries `uid`, `sum_file`, `profile_file` |
-| `eval_done`  | result saved; carries `result_file` path                          |
-| `eval_error` | LLM call failed; retryable                                        |
-| `reeval`     | re-queue after profile update; carries `reason`                   |
+| event        | meaning                                                        |
+| ------------ | -------------------------------------------------------------- |
+| `put`        | node enqueued for eval; carries `sum_file`, `profile_file`     |
+| `eval_done`  | result saved; carries `result_file` path                       |
+| `eval_error` | LLM call failed; retryable                                     |
 
-State per uid is the last event. Pending = last event is `put`, `eval_error`,
-or `reeval`.
+**State = last event in the file.** There is no uid — the queue is a linear
+sequence of requests for a single node. A new `put` after `eval_done` signals
+a reeval (e.g. after a profile update); no separate `reeval` event type is
+needed, as the log tells the story: `eval_done` → `put` with a newer
+`profile_file`.
 
-### eval*results/eval*<timestamp>\_<slug>.json — fields
+Pending = last event is `put` or `eval_error`.
+
+Example log after two eval cycles:
+
+```jsonl
+{"event": "put", "sum_file": "summarize/sum_ddg_..._ok_....json", "profile_file": "../../profile_20260505T1200.md", "ts": "..."}
+{"event": "eval_done", "result_file": "eval_results/eval_20260505T1201_acme.json", "ts": "..."}
+{"event": "put", "sum_file": "summarize/sum_ddg_..._ok_....json", "profile_file": "../../profile_20260506T0900.md", "ts": "..."}
+{"event": "eval_done", "result_file": "eval_results/eval_20260506T0901_acme.json", "ts": "..."}
+```
+
+### eval_results/eval_<timestamp>_<slug>.json — fields
 
 ```json
 {
   "ts": "...",
-  "eval_uid": "...",
   "sum_file": "summarize/sum_ddg_..._ok_....json",
   "profile_file": "../../profile_20260505T1200.md",
   "eval_version": "a3f9c1",
@@ -92,9 +104,10 @@ what they respond to, and that response feeds the profile update.
 when a node reaches `summarize_done`. The `sum_file` is the result file just
 written; `profile_file` is the currently active profile.
 
-**After profile update** — a `reeval` command (analogous to `resummarize`) scans
-all nodes whose last eval `profile_file` differs from the current active profile
-and appends a `reeval` event. The next eval run picks them up.
+**After profile update** — `anpe prospect reeval` scans all nodes whose last
+eval `profile_file` differs from the current active profile and appends a new
+`put` event with the updated `profile_file`. The next `anpe prospect eval` run
+picks them up.
 
 ---
 
