@@ -490,6 +490,156 @@ def prospect_eval(
     asyncio.run(_run())
 
 
+@prospect_group.command("map")
+def prospect_map() -> None:
+    """Display a compact map of all nodes (one glyph per node).
+
+    Glyphs by pipeline state:
+      ·  pending fetch          (dim)
+      !  fetch error            (red)
+      ○  fetched, not summarized (cyan)
+      ×  summarize error        (red)
+      –  not relevant           (yellow)
+      ◇  summarized, eval pending (cyan)
+      ‼  eval error             (red)
+      ∅  eval discarded         (dim)
+      ?  eval: enrich           (blue)
+      ▪  eval: maybe            (yellow)
+      ●  eval: good             (green)
+      ✗  eval: discard          (dim red)
+    Grey background = user has reviewed the node.
+
+    Example: anpe prospect map
+    """
+    from anpe.node_dir import all_node_ids_by_ctime
+
+    # (glyph, style, label)
+    _STATES: dict[str, tuple[str, str, str]] = {
+        "put":                   ("·", "dim",          "pending fetch"),
+        "fetch_error":           ("!", "bold red",      "fetch error"),
+        "fetch_done":            ("○", "cyan",          "fetched"),
+        "summarize_error":       ("×", "bold red",      "summarize error"),
+        "summarize_not_relevant":("–", "yellow",        "not relevant"),
+        "summarize_pending_eval":("◇", "cyan",          "summarized, eval pending"),
+        "eval_error":            ("‼", "bold red",      "eval error"),
+        "eval_discarded":        ("∅", "dim",           "eval discarded"),
+        "eval_enrich":           ("?", "bold blue",     "eval: enrich"),
+        "eval_maybe":            ("▪", "bold yellow",   "eval: maybe"),
+        "eval_good":             ("●", "bold green",    "eval: good"),
+        "eval_discard":          ("✗", "dim red",       "eval: discard"),
+    }
+
+    def _node_state(node_id: str) -> str:
+        node = NodeDir(node_id)
+
+        # Derive fetch state from fetch.jsonl
+        puts, latest = node._latest_event_per_uid()
+        fetch_state = "put"
+        if puts:
+            last_events = [latest.get(uid, put)["event"] for uid, put in puts.items()]
+            # Pick worst/most-advanced state across all uids
+            priority = [
+                "summarize_done", "summarize_not_relevant",
+                "fetch_done", "summarize_error", "fetch_error", "resummarize", "put",
+            ]
+            # Best state = furthest along the pipeline
+            fetch_state = max(last_events, key=lambda e: -priority.index(e) if e in priority else -99)
+            # Collapse resummarize → treat like put (pending)
+            if fetch_state == "resummarize":
+                fetch_state = "put"
+
+        # Map fetch state to display state
+        if fetch_state in ("put", "fetch_error", "summarize_error"):
+            state = fetch_state
+        elif fetch_state == "fetch_done":
+            state = "fetch_done"
+        elif fetch_state == "summarize_not_relevant":
+            state = "summarize_not_relevant"
+        elif fetch_state == "summarize_done":
+            # Check eval queue
+            last_eval = node._last_eval_event()
+            if last_eval is None:
+                state = "summarize_pending_eval"
+            elif last_eval["event"] == "eval_discarded":
+                state = "eval_discarded"
+            elif last_eval["event"] == "eval_error":
+                state = "eval_error"
+            elif last_eval["event"] == "put":
+                state = "summarize_pending_eval"
+            elif last_eval["event"] == "eval_done":
+                result = node.get_latest_eval_result()
+                score = result.get("score", "") if result else ""
+                state = {
+                    "good":    "eval_good",
+                    "maybe":   "eval_maybe",
+                    "enrich":  "eval_enrich",
+                    "discard": "eval_discard",
+                }.get(score, "summarize_pending_eval")
+            else:
+                state = "summarize_pending_eval"
+        else:
+            state = "put"
+
+        return state
+
+    ids = all_node_ids_by_ctime()
+    if not ids:
+        console.print(" [dim]No nodes found.[/]")
+        return
+
+    import math
+    from rich.text import Text
+
+    width = console.width or 80
+    cell_width = 2  # glyph + space
+    max_cols = (width - 2) // cell_width
+    # at least 3 rows
+    min_rows = 3
+    cols = min(max_cols, math.ceil(len(ids) / min_rows))
+
+    row = Text(" ")
+    col_count = 0
+
+    for node_id in ids:
+        state = _node_state(node_id)
+        glyph, style, _ = _STATES.get(state, ("?", "white", state))
+
+        node = NodeDir(node_id)
+        reviewed = node.is_reviewed()
+        if reviewed:
+            style = style + " on grey23"
+
+        row.append(glyph, style=style)
+        row.append(" ", style="on grey23" if reviewed else "")
+        col_count += 1
+
+        if col_count >= cols:
+            console.print(row)
+            row = Text(" ")
+            col_count = 0
+
+    if col_count:
+        console.print(row)
+
+    # Counts by state
+    console.print()
+    counts: dict[str, int] = {}
+    for node_id in ids:
+        s = _node_state(node_id)
+        counts[s] = counts.get(s, 0) + 1
+
+    # Legend — only show states that appear
+    legend = Text(" ")
+    for key, (glyph, style, label) in _STATES.items():
+        if key not in counts:
+            continue
+        legend.append(glyph, style=style)
+        legend.append(f" {label} ({counts[key]})", style="dim")
+        legend.append("   ")
+    console.print(legend)
+    console.print(f" [dim]{len(ids)} nodes total[/]")
+
+
 @prospect_group.command("reeval")
 @click.argument("node_ids", nargs=-1, metavar="[NODE_ID]...")
 @click.option("--all-nodes", is_flag=True, help="Check all existing nodes.")
