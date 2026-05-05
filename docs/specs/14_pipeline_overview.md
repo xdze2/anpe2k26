@@ -155,7 +155,7 @@ are included — already-incorporated signal is skipped.
 | ----------------- | --------------------------------------------------------------------- |
 | **Input**         | reactions (new), summaries (new), user profile (current)              |
 | **Output**        | user profile (updated)                                                |
-| **Files written** | `user_data/profile.md` (overwritten), `updated_ts` set in frontmatter |
+| **Files written** | `user_data/profile_<timestamp>.md` (new file per update — see `12_data_flow.md`) ⚠️ WIP |
 
 ---
 

@@ -1,5 +1,5 @@
 ---
-status: done
+status: active
 ---
 
 # POC — Enrichment pipeline
@@ -154,13 +154,6 @@ readable by browsing the directory, and linked from the `summarize_done` event i
 For LLM-backed tools, a companion `prompt_<tool>_<target>_<ts>.txt` is written
 alongside with the exact prompt sent — useful for prompt tuning, to be removed later.
 
-## What we want to learn
-
-- Does the LLM produce useful summaries from SIRENE + DDG data?
-- Does it propose sensible next targets?
-- How many fetch cycles does it take to get a meaningful picture of a company?
-- Where does it get stuck or produce noise?
-
 ## Insights
 
 Design decisions made during implementation:
@@ -188,33 +181,8 @@ always points to the latest.
 (quota, rate limit), the target stays in `fetch_done` state and `enrich` retries the
 summarize on the next call. No need to inject fake events or re-fetch.
 
-## Next session — prompt tuning
-
-The loop runs end-to-end. The blocking gap is that `llm_summarize` rarely proposes
-`new_targets`, so the loop stops after one step instead of following up with the
-company website or a more specific DDG query.
-
-**Goal:** get `new_targets` working reliably so the loop chains 2-3 fetch steps on its own.
-
-### What to do
-
-1. Test on 3-4 real companies, inspect `summarize/` result files for each.
-2. For each case where `new_targets` is empty: look at the raw DDG data — were there
-   obvious URLs or names to follow up on? If yes, the prompt is failing to extract them.
-3. Iterate on the system prompt in `anpe/enrich/summarize.py`. Use `anpe summarize NODEID`
-   to re-run the LLM on existing fetch data — no re-fetching needed.
-4. Add the `fetch` tool (raw HTTP GET, `httpx`) so LLM-proposed website URLs can
-   actually be fetched. Without it, `new_targets` with `"fetch"` are silently dropped.
-
 ### What good looks like
 
 - DDG step produces 1-2 follow-up targets (company website, or a more specific query)
 - `fetch` step on the website produces a richer summary
 - `not_relevant` threshold feels correctly calibrated (Veolia: yes, Synapse: no)
-
-### Lower priority for now
-
-- SIREN fetch (DDG already covers basic company info)
-- Agent integration (too early, loop quality not validated yet)
-- Error handling improvements (good enough for manual testing)
-- User profile replacing hardcoded intent

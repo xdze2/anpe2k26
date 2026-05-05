@@ -87,4 +87,4 @@ lose this signal.
 ### After profile update
 
 A `reeval` scan is triggered: all nodes whose last eval used an older profile
-file are re-queued. See `34_llm_eval_step.md`.
+file are re-queued. See `50_llm_eval_step.md`.
