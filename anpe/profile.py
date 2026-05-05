@@ -1,39 +1,48 @@
-"""Read/write the user search profile stored in user_data/profile.md."""
+"""Read/write the user search profile stored in user_data/."""
 
+from __future__ import annotations
+
+from datetime import datetime, timezone
 from pathlib import Path
 
-_PROFILE_PATH = Path(__file__).parent.parent / "user_data" / "profile.md"
-
-_EMPTY_PROFILE = """\
-# Search Profile
-
-## What I'm looking for
-(not yet filled)
-
-## Dealbreakers
-(not yet filled)
-
-## Context
-(not yet filled)
-"""
+_USER_DATA_DIR = Path(__file__).parent.parent / "user_data"
 
 _MAX_WORDS = 400
 
 
+def _profile_dir() -> Path:
+    return _USER_DATA_DIR
+
+
+def active_profile_file() -> Path | None:
+    """Return the Path of the most recent profile_<timestamp>.md, or None."""
+    candidates = sorted(_profile_dir().glob("profile_*.md"))
+    return candidates[-1] if candidates else None
+
+
 def read_profile() -> str:
-    if not _PROFILE_PATH.exists():
+    path = active_profile_file()
+    if path is None:
         return ""
-    return _PROFILE_PATH.read_text(encoding="utf-8").strip()
+    return path.read_text(encoding="utf-8").strip()
 
 
-def write_profile(content: str) -> str:
-    """Write new profile content. Returns a warning string if too long, else empty."""
+def write_profile_snapshot(content: str) -> tuple[Path, str]:
+    """Write a new timestamped profile snapshot.
+
+    Returns (path, warning) where warning is non-empty if over word limit.
+    """
+    ts = datetime.now(timezone.utc).strftime("%Y%m%dT%H%M%S")
+    path = _profile_dir() / f"profile_{ts}.md"
+    _profile_dir().mkdir(parents=True, exist_ok=True)
+    path.write_text(content.strip() + "\n", encoding="utf-8")
     word_count = len(content.split())
-    _PROFILE_PATH.parent.mkdir(parents=True, exist_ok=True)
-    _PROFILE_PATH.write_text(content.strip() + "\n", encoding="utf-8")
-    if word_count > _MAX_WORDS:
-        return f"Warning: profile is {word_count} words (limit is {_MAX_WORDS}). Please condense it."
-    return ""
+    warning = (
+        f"Warning: profile is {word_count} words (limit is {_MAX_WORDS}). Please condense it."
+        if word_count > _MAX_WORDS
+        else ""
+    )
+    return path, warning
 
 
 def profile_system_prompt() -> str:

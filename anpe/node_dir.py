@@ -42,6 +42,8 @@ class NodeDir:
         self._summary_file = self.path / "summary.md"
         self._raw_dir = self.path / "raw_data"
         self._summarize_dir = self.path / "summarize"
+        self._eval_queue_file = self.path / "eval_queue.jsonl"
+        self._eval_results_dir = self.path / "eval_results"
 
     def exists(self) -> bool:
         return self.path.exists()
@@ -149,6 +151,14 @@ class NodeDir:
         if reason:
             ev["reason"] = reason
         self._append_fetch_event(ev)
+
+    def get_latest_sum_file(self) -> str | None:
+        """Return the result_file from the most recent summarize_done event, or None."""
+        latest_sum_file = None
+        for ev in self._load_fetch_events():
+            if ev.get("event") == "summarize_done":
+                latest_sum_file = ev.get("result_file")
+        return latest_sum_file
 
     def get_stale_summarize_uids(self, tool_versions: dict[str, str]) -> list[str]:
         """Return uids with a summarize_done whose summarize_version differs from the tool's current version."""
@@ -344,6 +354,108 @@ class NodeDir:
         else:
             text = body
         self._summary_file.write_text(text, encoding="utf-8")
+
+
+    # ------------------------------------------------------------------
+    # Eval queue
+    # ------------------------------------------------------------------
+
+    def _append_eval_event(self, event: dict) -> None:  # type: ignore[type-arg]
+        with self._eval_queue_file.open("a", encoding="utf-8") as f:
+            f.write(json.dumps(event) + "\n")
+
+    def _last_eval_event(self) -> dict | None:  # type: ignore[type-arg]
+        if not self._eval_queue_file.exists():
+            return None
+        lines = [
+            line for line in self._eval_queue_file.read_text(encoding="utf-8").splitlines()
+            if line.strip()
+        ]
+        return json.loads(lines[-1]) if lines else None
+
+    def append_eval_put(self, sum_file: str, profile_file: str) -> None:
+        """Enqueue a node for eval (or re-eval after profile update)."""
+        self._append_eval_event(
+            {"event": "put", "sum_file": sum_file, "profile_file": profile_file, "ts": _now()}
+        )
+
+    def mark_eval_done(self, result_file: str) -> None:
+        self._append_eval_event(
+            {"event": "eval_done", "result_file": result_file, "ts": _now()}
+        )
+
+    def mark_eval_error(self, detail: str) -> None:
+        self._append_eval_event(
+            {"event": "eval_error", "detail": detail, "ts": _now()}
+        )
+
+    def pop_eval_pending(self) -> dict | None:  # type: ignore[type-arg]
+        """Return the last eval queue event if the node is pending eval, else None.
+
+        Pending = last event is 'put' or 'eval_error'.
+        """
+        last = self._last_eval_event()
+        if last is None or last["event"] not in ("put", "eval_error"):
+            return None
+        return last
+
+    def get_latest_eval_result(self) -> dict | None:  # type: ignore[type-arg]
+        """Return the parsed JSON of the most recent eval_done result, or None."""
+        last = self._last_eval_event()
+        if last is None or last["event"] != "eval_done":
+            return None
+        result_file = last.get("result_file", "")
+        if not result_file:
+            return None
+        path = self._eval_results_dir / Path(result_file).name
+        if not path.exists():
+            return None
+        return json.loads(path.read_text(encoding="utf-8"))
+
+    def save_eval_result(
+        self,
+        sum_file: str,
+        profile_file: str,
+        eval_version: str,
+        model: str,
+        score: str,
+        fit: str,
+        dealbreakers: list[str],
+        uncertainty: str,
+        duration_s: float,
+    ) -> str:
+        """Write eval_results/eval_<ts>_<slug>.json. Returns the filename."""
+        if not self._eval_results_dir.exists():
+            self._eval_results_dir.mkdir(parents=True, exist_ok=True)
+        ts = datetime.now(timezone.utc).strftime("%Y%m%dT%H%M%S")
+        slug = self.node_id[:40]
+        filename = f"eval_{ts}_{slug}.json"
+        data = {
+            "ts": _now(),
+            "sum_file": sum_file,
+            "profile_file": profile_file,
+            "eval_version": eval_version,
+            "model": model,
+            "score": score,
+            "fit": fit,
+            "dealbreakers": dealbreakers,
+            "uncertainty": uncertainty,
+            "duration_s": duration_s,
+        }
+        (self._eval_results_dir / filename).write_text(
+            json.dumps(data, indent=2, ensure_ascii=False), encoding="utf-8"
+        )
+        return filename
+
+    def is_eval_stale(self, current_profile_file: str, current_eval_version: str) -> bool:
+        """True if the latest eval used a different profile or eval_version."""
+        result = self.get_latest_eval_result()
+        if result is None:
+            return True
+        return (
+            result.get("profile_file") != current_profile_file
+            or result.get("eval_version") != current_eval_version
+        )
 
 
 def all_node_ids_by_ctime() -> list[str]:

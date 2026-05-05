@@ -125,6 +125,15 @@ async def _run_process(node: NodeDir, entry: FetchEntry, raw_data: str, raw_file
         if tool_slug in FETCH_TOOLS:
             node.append_target(tool_slug, target)
 
+    if result.status == "ok":
+        from anpe.profile import active_profile_file
+        profile_path = active_profile_file()
+        if profile_path is not None:
+            node.append_eval_put(
+                sum_file=f"summarize/{result_file}",
+                profile_file=str(profile_path),
+            )
+
     return StepLog(node_id=node.node_id, tool=entry.tool, target=entry.target,
                    status=result.status, new_targets=new_targets)
 

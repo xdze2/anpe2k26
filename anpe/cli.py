@@ -419,6 +419,132 @@ def prospect_resummarize(node_ids: tuple[str, ...], all_nodes: bool) -> None:
         console.print(f"\n [dim]{total} uid(s) queued for re-summarization.[/]")
 
 
+@prospect_group.command("eval")
+@click.argument("node_ids", nargs=-1, metavar="[NODE_ID]...")
+@click.option("-n", "budget", default=1, show_default=True,
+              help="Total eval steps across all nodes.")
+@click.option("--all-nodes", is_flag=True, help="Run on all existing nodes.")
+@click.option("--until-done", is_flag=True,
+              help="Run until all eval queues empty (ignores -n).")
+def prospect_eval(
+    node_ids: tuple[str, ...], budget: int, all_nodes: bool, until_done: bool
+) -> None:
+    """Run the eval pipeline (score summaries against the user profile).
+
+    \b
+    anpe prospect eval                       1 step, all nodes
+    anpe prospect eval -n 10                 10 steps total
+    anpe prospect eval -n 5 node1 node2      5 steps on specific nodes
+    anpe prospect eval --all-nodes --until-done
+    """
+    from anpe.node_dir import all_node_ids_by_ctime
+    from anpe.prospect.eval_pipeline import EvalStepLog, run_eval_batch
+
+    if node_ids and all_nodes:
+        raise click.UsageError("NODE_IDs and --all-nodes are mutually exclusive.")
+    if until_done and budget != 1:
+        raise click.UsageError("-n and --until-done are mutually exclusive.")
+
+    if all_nodes:
+        ids = all_node_ids_by_ctime()
+    elif node_ids:
+        ids = list(node_ids)
+    else:
+        ids = all_node_ids_by_ctime()
+
+    if not ids:
+        console.print(" [dim]No nodes found.[/]")
+        return
+
+    missing = [nid for nid in ids if not NodeDir(nid).exists()]
+    if missing:
+        for nid in missing:
+            console.print(f" [bold red]Error[/] node {nid!r} not found")
+        return
+
+    _SCORE_STYLE = {
+        "good": "green",
+        "maybe": "yellow",
+        "discard": "red",
+        "enrich": "cyan",
+    }
+
+    def _print_eval_log(log: EvalStepLog) -> None:
+        if log.status == "empty_queue":
+            return
+        status_style = {"ok": "green", "eval_error": "red", "no_profile": "red",
+                        "no_summary": "yellow"}.get(log.status, "white")
+        console.print(f" [dim]node[/]   [bold]{log.node_id}[/]")
+        if log.score:
+            score_style = _SCORE_STYLE.get(log.score, "white")
+            console.print(f" [dim]score[/]  [{score_style}]{log.score}[/]  {log.fit}")
+        else:
+            console.print(f" [dim]status[/] [{status_style}]{log.status}[/]")
+
+    effective_budget = None if until_done else budget
+
+    async def _run() -> None:
+        async for log in run_eval_batch(ids, effective_budget):
+            _print_eval_log(log)
+
+    asyncio.run(_run())
+
+
+@prospect_group.command("reeval")
+@click.argument("node_ids", nargs=-1, metavar="[NODE_ID]...")
+@click.option("--all-nodes", is_flag=True, help="Check all existing nodes.")
+def prospect_reeval(node_ids: tuple[str, ...], all_nodes: bool) -> None:
+    """Sync the eval queue: enqueue any summarized node that has no current eval.
+
+    Covers two cases:
+    - Never enqueued (summarized before eval existed, or eval was never run).
+    - Stale (last eval used an older profile or eval_version).
+
+    Appends a new eval put for each affected node. The next 'anpe prospect eval'
+    run picks them up.
+
+    \b
+    anpe prospect reeval                  check all nodes
+    anpe prospect reeval node1 node2      check specific nodes
+    """
+    from anpe.node_dir import all_node_ids_by_ctime
+    from anpe.profile import active_profile_file
+    from anpe.prospect.eval import EVAL_VERSION
+
+    if node_ids and all_nodes:
+        raise click.UsageError("NODE_IDs and --all-nodes are mutually exclusive.")
+
+    ids = list(node_ids) if node_ids else all_node_ids_by_ctime()
+
+    if not ids:
+        console.print(" [dim]No nodes found.[/]")
+        return
+
+    profile_path = active_profile_file()
+    if profile_path is None:
+        console.print(" [bold red]Error[/] no profile file found — run 'anpe profile update' first")
+        return
+
+    total = 0
+    for node_id in ids:
+        node = NodeDir(node_id)
+        if not node.exists():
+            console.print(f" [bold red]Error[/] node {node_id!r} not found")
+            continue
+        sum_file = node.get_latest_sum_file()
+        if sum_file is None:
+            continue  # not yet summarized — nothing to eval
+        if node.is_eval_stale(str(profile_path), EVAL_VERSION):
+            node.append_eval_put(f"summarize/{sum_file}", str(profile_path))
+            console.print(f" [dim]node[/] [bold]{node_id}[/]  [yellow]queued[/]")
+            total += 1
+
+    if total == 0:
+        console.print(" [dim]All evals are up to date.[/]")
+    else:
+        console.print(f"\n [dim]{total} node(s) queued for re-eval.[/]")
+
+
 @cli.group("profile")
 def profile_group() -> None:
     """Manage the user search profile."""

@@ -3,7 +3,7 @@ from pydantic_ai.models.openai import OpenAIChatModel
 from pydantic_ai.providers.openai import OpenAIProvider
 
 from anpe.config import settings
-from anpe.profile import profile_system_prompt, read_profile, write_profile
+from anpe.profile import profile_system_prompt, read_profile, write_profile_snapshot
 from anpe.tools.naf import register_naf_tools
 
 _model = OpenAIChatModel(
@@ -42,7 +42,7 @@ def update_search_profile(new_content: str) -> str:
     Keep it under 400 words — synthesize, don't accumulate.
     Returns a warning if the content is too long.
     """
-    warning = write_profile(new_content)
+    _, warning = write_profile_snapshot(new_content)
     return warning if warning else "Profile updated."
 
 
