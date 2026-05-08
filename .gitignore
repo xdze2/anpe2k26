@@ -28,6 +28,7 @@ htmlcov/
 
 # user data (personal, not committed)
 user_data/
+user_*
 cache_data/
 
 # editors
