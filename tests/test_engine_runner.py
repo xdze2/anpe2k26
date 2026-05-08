@@ -138,6 +138,7 @@ def patch_nodes(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setattr("anpe.engine.steps.fetch_ddg.USER_VAULT_DIR", tmp_path / "vault")
     monkeypatch.setattr("anpe.engine.steps.summarize_ddg.NODES_DIR", tmp_path / "nodes")
     monkeypatch.setattr("anpe.engine.steps.eval.NODES_DIR", tmp_path / "nodes")
+    monkeypatch.setattr("anpe.engine.queue.QUEUE_DB", tmp_path / "queue.db")
 
 
 def test_scan_empty(tmp_path: Path) -> None:

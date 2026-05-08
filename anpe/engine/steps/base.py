@@ -5,6 +5,7 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 from typing import Callable, Protocol
 
+from anpe.engine.queue import Queue
 from anpe.engine.vault import Vault
 
 Log = Callable[[str], None]
@@ -21,7 +22,8 @@ class Candidate:
 class Step(Protocol):
     name: str
     version: str
+    description: str
 
-    def scan(self, **filter_flags: object) -> list[Candidate]: ...
+    def scan(self, queue: Queue, **filter_flags: object) -> list[Candidate]: ...
 
     async def work(self, args: dict, vault: Vault, log: Log) -> dict: ...  # type: ignore[type-arg]

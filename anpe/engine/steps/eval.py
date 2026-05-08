@@ -5,6 +5,7 @@ from __future__ import annotations
 import json
 from pathlib import Path
 
+from anpe.engine.queue import Queue
 from anpe.engine.steps.base import Candidate, Log
 from anpe.engine.vault import Vault
 from anpe.node_dir import NODES_DIR, NodeDir
@@ -15,9 +16,11 @@ from anpe.prospect.eval import EVAL_VERSION, llm_eval
 class EvalStep:
     name = "eval"
     version = EVAL_VERSION
+    description = "Score each summarized company against the user profile and assign a fit level."
 
     def scan(
         self,
+        queue: Queue,
         *,
         min_score: str | None = None,
         exclude_reaction: str | None = None,

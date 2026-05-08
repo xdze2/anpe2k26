@@ -11,8 +11,14 @@ from pathlib import Path
 
 import pytest
 
+from anpe.engine.queue import Queue
 from anpe.engine.steps.base import Candidate
 from anpe.engine.vault import Vault
+
+
+def _make_queue(tmp_path: Path) -> Queue:
+    """Scratch queue in tmp_path — satisfies scan(queue, ...) for steps that don't need it."""
+    return Queue(db_path=tmp_path / "queue.db")
 
 
 # ---------------------------------------------------------------------------
@@ -76,17 +82,18 @@ class TestFetchDdgStepScan:
         nodes_dir.mkdir()
         monkeypatch.setattr("anpe.engine.steps.fetch_ddg.NODES_DIR", nodes_dir)
         self.nodes_dir = nodes_dir
+        self.queue = _make_queue(tmp_path)
 
     def test_empty_when_no_nodes(self) -> None:
         from anpe.engine.steps.fetch_ddg import FetchDdgStep
-        assert FetchDdgStep().scan() == []
+        assert FetchDdgStep().scan(self.queue) == []
 
     def test_pending_ddg_put_is_a_candidate(self) -> None:
         from anpe.engine.steps.fetch_ddg import FetchDdgStep
         node = _make_node(self.nodes_dir, "node_1")
         _append_fetch_event(node, {"event": "put", "uid": "u1", "tool": "ddg", "target": "acme corp", "ts": _now()})
 
-        candidates = FetchDdgStep().scan()
+        candidates = FetchDdgStep().scan(self.queue)
         assert len(candidates) == 1
         assert candidates[0].node_id == "node_1"
         assert candidates[0].args["tool"] == "ddg"
@@ -97,7 +104,7 @@ class TestFetchDdgStepScan:
         node = _make_node(self.nodes_dir, "node_1")
         _append_fetch_event(node, {"event": "put", "uid": "u1", "tool": "siren", "target": "123456789", "ts": _now()})
 
-        assert FetchDdgStep().scan() == []
+        assert FetchDdgStep().scan(self.queue) == []
 
     def test_fetch_done_not_a_candidate(self) -> None:
         from anpe.engine.steps.fetch_ddg import FetchDdgStep
@@ -105,7 +112,7 @@ class TestFetchDdgStepScan:
         _append_fetch_event(node, {"event": "put", "uid": "u1", "tool": "ddg", "target": "acme", "ts": _now()})
         _append_fetch_event(node, {"event": "fetch_done", "uid": "u1", "raw_file": "raw_ddg_acme.json", "ts": _now()})
 
-        assert FetchDdgStep().scan() == []
+        assert FetchDdgStep().scan(self.queue) == []
 
     def test_summarize_error_is_a_candidate(self) -> None:
         from anpe.engine.steps.fetch_ddg import FetchDdgStep
@@ -114,7 +121,7 @@ class TestFetchDdgStepScan:
         _append_fetch_event(node, {"event": "fetch_done", "uid": "u1", "raw_file": "r.json", "ts": _now()})
         _append_fetch_event(node, {"event": "summarize_error", "uid": "u1", "detail": "oops", "ts": _now()})
 
-        assert len(FetchDdgStep().scan()) == 1
+        assert len(FetchDdgStep().scan(self.queue)) == 1
 
     def test_multiple_nodes_multiple_candidates(self) -> None:
         from anpe.engine.steps.fetch_ddg import FetchDdgStep
@@ -122,7 +129,44 @@ class TestFetchDdgStepScan:
             node = _make_node(self.nodes_dir, name)
             _append_fetch_event(node, {"event": "put", "uid": "u1", "tool": "ddg", "target": "t", "ts": _now()})
 
-        assert len(FetchDdgStep().scan()) == 2
+        assert len(FetchDdgStep().scan(self.queue)) == 2
+
+    def test_listing_from_queue_emits_candidates(self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+        from anpe.engine.steps.fetch_ddg import FetchDdgStep
+        from anpe.engine.vault import USER_VAULT_DIR
+
+        vault_dir = tmp_path / "vault"
+        vault_dir.mkdir()
+        monkeypatch.setattr("anpe.engine.steps.fetch_ddg.USER_VAULT_DIR", vault_dir)
+
+        listing_uri = "_bootstrap/bootstrap/20260508_listing.jsonl"
+        listing_path = vault_dir / listing_uri
+        listing_path.parent.mkdir(parents=True)
+        listing_path.write_text(
+            '{"nom_complet": "Acme SA", "siren": "123456789"}\n',
+            encoding="utf-8",
+        )
+
+        self.queue.put("_bootstrap", "bootstrap", "v2", {"profile_hash": "abc"})
+        uid = list(self.queue.pending("bootstrap"))[0].uid
+        self.queue.mark_done(uid, "bootstrap", "_bootstrap", {"listing_uri": listing_uri, "count": 1})
+
+        candidates = FetchDdgStep().scan(self.queue)
+        assert len(candidates) == 1
+        assert candidates[0].args["target"] == "Acme SA"
+        assert candidates[0].args["listing_uri"] == listing_uri
+
+    def test_no_listing_when_bootstrap_not_done(self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+        from anpe.engine.steps.fetch_ddg import FetchDdgStep
+
+        vault_dir = tmp_path / "vault"
+        vault_dir.mkdir()
+        monkeypatch.setattr("anpe.engine.steps.fetch_ddg.USER_VAULT_DIR", vault_dir)
+
+        self.queue.put("_bootstrap", "bootstrap", "v2", {"profile_hash": "abc"})
+        # bootstrap is only put, not done yet
+
+        assert FetchDdgStep().scan(self.queue) == []
 
 
 # ---------------------------------------------------------------------------
@@ -137,6 +181,7 @@ class TestSummarizeDdgStepScan:
         monkeypatch.setattr("anpe.engine.steps.summarize_ddg.NODES_DIR", nodes_dir)
         monkeypatch.setattr("anpe.node_dir.NODES_DIR", nodes_dir)
         self.nodes_dir = nodes_dir
+        self.queue = _make_queue(tmp_path)
 
     def _fetch_done(self, node: Path, uid: str = "u1") -> None:
         _append_fetch_event(node, {"event": "put", "uid": uid, "tool": "ddg", "target": "t", "ts": _now()})
@@ -144,14 +189,14 @@ class TestSummarizeDdgStepScan:
 
     def test_empty_when_no_nodes(self) -> None:
         from anpe.engine.steps.summarize_ddg import SummarizeDdgStep
-        assert SummarizeDdgStep().scan() == []
+        assert SummarizeDdgStep().scan(self.queue) == []
 
     def test_fetch_done_without_summary_is_candidate(self) -> None:
         from anpe.engine.steps.summarize_ddg import SummarizeDdgStep
         node = _make_node(self.nodes_dir, "node_1")
         self._fetch_done(node)
 
-        candidates = SummarizeDdgStep().scan()
+        candidates = SummarizeDdgStep().scan(self.queue)
         assert len(candidates) == 1
         assert candidates[0].node_id == "node_1"
         assert "raw_uri" in candidates[0].args
@@ -162,7 +207,7 @@ class TestSummarizeDdgStepScan:
         _append_fetch_event(node, {"event": "put", "uid": "u1", "tool": "siren", "target": "123456789", "ts": _now()})
         _append_fetch_event(node, {"event": "fetch_done", "uid": "u1", "raw_file": "raw_siren.json", "ts": _now()})
 
-        assert SummarizeDdgStep().scan() == []
+        assert SummarizeDdgStep().scan(self.queue) == []
 
     def test_already_summarized_not_a_candidate(self) -> None:
         from anpe.engine.steps.summarize_ddg import SummarizeDdgStep
@@ -171,7 +216,7 @@ class TestSummarizeDdgStepScan:
         self._fetch_done(node)
         _write_sum_file(node, "sum_ddg_t_ok_20260508.json", "u1", SUMMARIZE_VERSION)
 
-        assert SummarizeDdgStep().scan() == []
+        assert SummarizeDdgStep().scan(self.queue) == []
 
     def test_stale_summarize_version_is_candidate(self) -> None:
         from anpe.engine.steps.summarize_ddg import SummarizeDdgStep
@@ -179,7 +224,7 @@ class TestSummarizeDdgStepScan:
         self._fetch_done(node)
         _write_sum_file(node, "sum_ddg_t_ok_20260508.json", "u1", "old_version")
 
-        assert len(SummarizeDdgStep().scan()) == 1
+        assert len(SummarizeDdgStep().scan(self.queue)) == 1
 
     def test_pending_target_not_a_candidate(self) -> None:
         from anpe.engine.steps.summarize_ddg import SummarizeDdgStep
@@ -187,7 +232,7 @@ class TestSummarizeDdgStepScan:
         _append_fetch_event(node, {"event": "put", "uid": "u1", "tool": "ddg", "target": "t", "ts": _now()})
         # no fetch_done event → fetch not finished yet
 
-        assert SummarizeDdgStep().scan() == []
+        assert SummarizeDdgStep().scan(self.queue) == []
 
     def test_naf_prefix_filter(self, monkeypatch: pytest.MonkeyPatch) -> None:
         from anpe.engine.steps.summarize_ddg import SummarizeDdgStep
@@ -195,8 +240,8 @@ class TestSummarizeDdgStepScan:
         self._fetch_done(node)
         monkeypatch.setattr("anpe.node_dir.NodeDir.get_siren_meta", lambda self: {"naf": "62.01Z"})
 
-        assert len(SummarizeDdgStep().scan(naf_prefix="62")) == 1
-        assert SummarizeDdgStep().scan(naf_prefix="85") == []
+        assert len(SummarizeDdgStep().scan(self.queue, naf_prefix="62")) == 1
+        assert SummarizeDdgStep().scan(self.queue, naf_prefix="85") == []
 
 
 # ---------------------------------------------------------------------------
@@ -214,6 +259,7 @@ class TestEvalStepScan:
         self.profile = tmp_path / "profile.md"
         self.profile.write_text("I want X", encoding="utf-8")
         monkeypatch.setattr("anpe.engine.steps.eval.active_profile_file", lambda: self.profile)
+        self.queue = _make_queue(tmp_path)
 
     def _with_summary(self, node_id: str, uid: str = "u1") -> Path:
         from anpe.prospect.registry import FETCH_TOOLS
@@ -230,19 +276,19 @@ class TestEvalStepScan:
         from anpe.engine.steps.eval import EvalStep
         monkeypatch.setattr("anpe.engine.steps.eval.active_profile_file", lambda: None)
         self._with_summary("node_1")
-        assert EvalStep().scan() == []
+        assert EvalStep().scan(self.queue) == []
 
     def test_node_with_summary_is_candidate(self) -> None:
         from anpe.engine.steps.eval import EvalStep
         self._with_summary("node_1")
-        candidates = EvalStep().scan()
+        candidates = EvalStep().scan(self.queue)
         assert len(candidates) == 1
         assert candidates[0].node_id == "node_1"
 
     def test_node_without_summary_not_a_candidate(self) -> None:
         from anpe.engine.steps.eval import EvalStep
         _make_node(self.nodes_dir, "node_1")
-        assert EvalStep().scan() == []
+        assert EvalStep().scan(self.queue) == []
 
     def test_already_evaled_not_a_candidate(self) -> None:
         from anpe.engine.steps.eval import EvalStep, EVAL_VERSION
@@ -250,14 +296,14 @@ class TestEvalStepScan:
         sum_file = "sum_ddg_t_ok_20260508_u1.json"
         profile_uri = str(self.profile)
         _write_eval_file(node, "eval_20260508_node_1.json", sum_file, profile_uri, EVAL_VERSION)
-        assert EvalStep().scan() == []
+        assert EvalStep().scan(self.queue) == []
 
     def test_stale_eval_version_is_candidate(self) -> None:
         from anpe.engine.steps.eval import EvalStep
         node = self._with_summary("node_1")
         sum_file = "sum_ddg_t_ok_20260508_u1.json"
         _write_eval_file(node, "eval_20260508_node_1.json", sum_file, str(self.profile), "old_version")
-        assert len(EvalStep().scan()) == 1
+        assert len(EvalStep().scan(self.queue)) == 1
 
     def test_exclude_reaction_filter(self, monkeypatch: pytest.MonkeyPatch) -> None:
         from anpe.engine.steps.eval import EvalStep
@@ -266,27 +312,27 @@ class TestEvalStepScan:
             "anpe.node_dir.NodeDir.get_latest_review",
             lambda self: {"reaction": "discard"},
         )
-        assert EvalStep().scan(exclude_reaction="discard") == []
-        assert len(EvalStep().scan(exclude_reaction="good")) == 1
+        assert EvalStep().scan(self.queue, exclude_reaction="discard") == []
+        assert len(EvalStep().scan(self.queue, exclude_reaction="good")) == 1
 
     def test_min_score_filter_skips_low_score(self) -> None:
         from anpe.engine.steps.eval import EvalStep
         node = self._with_summary("node_1")
         sum_file = "sum_ddg_t_ok_20260508_u1.json"
         _write_eval_file(node, "eval_20260508_node_1.json", sum_file, str(self.profile), "old_version", score="discard")
-        assert EvalStep().scan(min_score="maybe") == []
+        assert EvalStep().scan(self.queue, min_score="maybe") == []
 
     def test_min_score_filter_keeps_high_score(self) -> None:
         from anpe.engine.steps.eval import EvalStep
         node = self._with_summary("node_1")
         sum_file = "sum_ddg_t_ok_20260508_u1.json"
         _write_eval_file(node, "eval_20260508_node_1.json", sum_file, str(self.profile), "old_version", score="good")
-        assert len(EvalStep().scan(min_score="maybe")) == 1
+        assert len(EvalStep().scan(self.queue, min_score="maybe")) == 1
 
     def test_no_prior_eval_passes_min_score(self) -> None:
         from anpe.engine.steps.eval import EvalStep
         self._with_summary("node_1")
-        assert len(EvalStep().scan(min_score="good")) == 1
+        assert len(EvalStep().scan(self.queue, min_score="good")) == 1
 
     def test_context_carries_score_and_reaction(self, monkeypatch: pytest.MonkeyPatch) -> None:
         from anpe.engine.steps.eval import EvalStep
@@ -297,6 +343,6 @@ class TestEvalStepScan:
             "anpe.node_dir.NodeDir.get_latest_review",
             lambda self: {"reaction": "good"},
         )
-        candidates = EvalStep().scan()
+        candidates = EvalStep().scan(self.queue)
         assert candidates[0].context["score"] == "maybe"
         assert candidates[0].context["reaction"] == "good"

@@ -5,6 +5,7 @@ from __future__ import annotations
 import json
 import pathlib
 
+from anpe.engine.queue import Queue
 from anpe.engine.steps.base import Candidate, Log
 from anpe.engine.vault import Vault
 from anpe.node_dir import NODES_DIR, NodeDir
@@ -17,8 +18,9 @@ _TOOL = "ddg"
 class SummarizeDdgStep:
     name = "summarize_ddg"
     version = SUMMARIZE_VERSION
+    description = "Summarize raw DDG fetch results with an LLM and extract follow-up targets."
 
-    def scan(self, *, naf_prefix: str | None = None, **_: object) -> list[Candidate]:
+    def scan(self, queue: Queue, *, naf_prefix: str | None = None, **_: object) -> list[Candidate]:
         """Return one Candidate per (node, raw_uri) DDG pair with no matching summary.
 
         filter_flags:

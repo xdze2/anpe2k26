@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import json
 
+from anpe.engine.queue import Queue
 from anpe.engine.steps.base import Candidate, Log
 from anpe.engine.vault import USER_VAULT_DIR, Vault
 from anpe.node_dir import NODES_DIR
@@ -13,28 +14,30 @@ from anpe.prospect.seed import node_id_for
 
 _TOOL = "ddg"
 _BOOTSTRAP_NODE = "_bootstrap"
+_BOOTSTRAP_STEP = "bootstrap"
 
 
 class FetchDdgStep:
     name = "fetch_ddg"
     version = "v1"
+    description = "Fetch raw DDG search results for companies from the bootstrap listing or follow-up targets."
 
-    def scan(self, count: int = 10, **_: object) -> list[Candidate]:
+    def scan(self, queue: Queue, count: int = 10, **_: object) -> list[Candidate]:
         """Return Candidates from two sources:
         1. Bootstrap listing — new companies not yet in NODES_DIR (capped at count).
         2. Existing fetch.jsonl entries with pending DDG targets (follow-ups, uncapped).
         """
         candidates: list[Candidate] = []
-        candidates.extend(self._scan_listing(count))
+        candidates.extend(self._scan_listing(queue, count))
         candidates.extend(self._scan_followups())
         return candidates
 
-    def _scan_listing(self, count: int) -> list[Candidate]:
-        """Read the latest bootstrap listing JSONL, emit one Candidate per new company."""
-        listing_files = sorted(USER_VAULT_DIR.glob(f"{_BOOTSTRAP_NODE}/bootstrap/*_listing.jsonl"))
-        if not listing_files:
+    def _scan_listing(self, queue: Queue, count: int) -> list[Candidate]:
+        """Read the latest completed bootstrap listing from the queue, emit one Candidate per new company."""
+        listing_uri = _latest_bootstrap_listing_uri(queue)
+        if listing_uri is None:
             return []
-        listing_path = listing_files[-1]
+        listing_path = USER_VAULT_DIR / listing_uri
 
         existing_nodes: set[str] = set()
         if NODES_DIR.exists():
@@ -69,7 +72,7 @@ class FetchDdgStep:
                     "tool": _TOOL,
                     "target": row["nom_complet"],
                     "source": "listing",
-                    "listing_uri": str(listing_path.relative_to(USER_VAULT_DIR)),
+                    "listing_uri": listing_uri,
                 },
                 context={"nom_complet": row["nom_complet"], "siren": row["siren"]},
             ))
@@ -146,3 +149,15 @@ class FetchDdgStep:
         uri = vault.store(node_id, self.name, uid, fetch_tool.raw_ext, raw_data.encode())
         log(f"saved → {uri}")
         return {"raw_uri": uri, "tool": _TOOL, "target": target}
+
+
+def _latest_bootstrap_listing_uri(queue: Queue) -> str | None:
+    """Return the listing_uri from the most recent successfully completed bootstrap run, or None."""
+    events = queue.node_history(_BOOTSTRAP_NODE, step=_BOOTSTRAP_STEP)
+    for ev in reversed(events):
+        if ev["event"] == "done" and ev.get("outputs"):
+            outputs = json.loads(ev["outputs"]) if isinstance(ev["outputs"], str) else ev["outputs"]
+            uri = outputs.get("listing_uri")
+            if uri:
+                return str(uri)
+    return None

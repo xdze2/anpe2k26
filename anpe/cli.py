@@ -547,20 +547,19 @@ def prospect_map() -> None:
 
 
 # ---------------------------------------------------------------------------
-# Engine commands — scan / put / run / step
+# Engine commands — scan / put / run / step / steps
 # ---------------------------------------------------------------------------
 
-def _make_steps() -> dict[str, object]:
-    from anpe.engine.steps.bootstrap import BootstrapStep
-    from anpe.engine.steps.eval import EvalStep
-    from anpe.engine.steps.fetch_ddg import FetchDdgStep
-    from anpe.engine.steps.summarize_ddg import SummarizeDdgStep
+from anpe.engine.registry import STEPS as _STEPS  # noqa: E402
 
-    steps = [BootstrapStep(), FetchDdgStep(), SummarizeDdgStep(), EvalStep()]
-    return {s.name: s for s in steps}
+_KNOWN_STEPS = list(_STEPS)
 
 
-_KNOWN_STEPS = ["bootstrap", "fetch_ddg", "summarize_ddg", "eval"]
+@cli.command("steps")
+def cmd_steps() -> None:
+    """List all registered engine steps."""
+    for name, step in _STEPS.items():
+        console.print(f" [bold]{name}[/]  [dim]{step.version}[/]  {step.description}", crop=False, overflow="ignore")
 
 
 @cli.command("scan")
@@ -586,8 +585,7 @@ def cmd_scan(
     anpe scan bootstrap
     anpe scan bootstrap --refresh
     """
-    steps = _make_steps()
-    step_obj = steps[step]
+    step_obj = _STEPS[step]
 
     flags: dict[str, object] = {}
     if min_score is not None:
@@ -599,8 +597,11 @@ def cmd_scan(
     if refresh:
         flags["refresh"] = refresh
 
+    from anpe.engine.queue import Queue
     from anpe.engine.steps.base import Candidate
-    candidates: list[Candidate] = step_obj.scan(**flags)  # type: ignore[union-attr]
+    queue = Queue()
+    candidates: list[Candidate] = step_obj.scan(queue, **flags)
+    queue.close()
 
     for c in candidates:
         sys.stdout.write(json.dumps({
@@ -622,17 +623,6 @@ def cmd_put() -> None:
     anpe scan eval | anpe put
     """
     from anpe.engine.queue import Queue
-    from anpe.engine.steps.bootstrap import BootstrapStep
-    from anpe.engine.steps.eval import EvalStep
-    from anpe.engine.steps.fetch_ddg import FetchDdgStep
-    from anpe.engine.steps.summarize_ddg import SummarizeDdgStep
-
-    _versions = {
-        BootstrapStep.name: BootstrapStep.version,
-        FetchDdgStep.name: FetchDdgStep.version,
-        SummarizeDdgStep.name: SummarizeDdgStep.version,
-        EvalStep.name: EvalStep.version,
-    }
 
     queue = Queue()
     total = 0
@@ -651,7 +641,7 @@ def cmd_put() -> None:
         step = item.get("step", "")
         node_id = item.get("node_id", "")
         args = item.get("args", {})
-        version = _versions.get(step, "v1")
+        version = _STEPS[step].version if step in _STEPS else "v1"
 
         before = queue.pending(step)
         uid = queue.put(node_id, step, version, args)
@@ -682,16 +672,11 @@ def cmd_run(step_name: str | None, budget: int | None) -> None:
     """
     from anpe.engine.queue import Queue
     from anpe.engine.runner import Runner
-    from anpe.engine.steps.bootstrap import BootstrapStep
-    from anpe.engine.steps.eval import EvalStep
-    from anpe.engine.steps.fetch_ddg import FetchDdgStep
-    from anpe.engine.steps.summarize_ddg import SummarizeDdgStep
     from anpe.engine.vault import Vault
 
-    steps = [BootstrapStep(), FetchDdgStep(), SummarizeDdgStep(), EvalStep()]
     queue = Queue()
     vault = Vault()
-    runner = Runner(steps, queue, vault)
+    runner = Runner(list(_STEPS.values()), queue, vault)
 
     _STATUS_STYLE = {"done": "green", "error_retry": "yellow", "error_abort": "red"}
 
@@ -734,14 +719,9 @@ def cmd_step(
     """
     from anpe.engine.queue import Queue
     from anpe.engine.runner import Runner
-    from anpe.engine.steps.bootstrap import BootstrapStep
-    from anpe.engine.steps.eval import EvalStep
-    from anpe.engine.steps.fetch_ddg import FetchDdgStep
-    from anpe.engine.steps.summarize_ddg import SummarizeDdgStep
     from anpe.engine.vault import Vault
 
-    steps_map = _make_steps()
-    step_obj = steps_map[step_name]
+    step_obj = _STEPS[step_name]
 
     flags: dict[str, object] = {}
     if min_score is not None:
@@ -753,24 +733,18 @@ def cmd_step(
     if refresh:
         flags["refresh"] = refresh
 
-    candidates = step_obj.scan(**flags)  # type: ignore[union-attr]
+    queue = Queue()
+    candidates = step_obj.scan(queue, **flags)
 
     if not candidates:
         console.print(" [dim]No candidates.[/]")
+        queue.close()
         return
 
     console.print(f" [dim]{len(candidates)} candidate(s) found.[/]")
 
-    _versions = {
-        BootstrapStep.name: BootstrapStep.version,
-        FetchDdgStep.name: FetchDdgStep.version,
-        SummarizeDdgStep.name: SummarizeDdgStep.version,
-        EvalStep.name: EvalStep.version,
-    }
-
-    queue = Queue()
     queued = 0
-    version = _versions.get(step_name, "v1")
+    version = step_obj.version
     for c in candidates:
         before = len(queue.pending(step_name))
         queue.put(c.node_id, step_name, version, c.args)
@@ -785,8 +759,7 @@ def cmd_step(
         return
 
     vault = Vault()
-    steps = [BootstrapStep(), FetchDdgStep(), SummarizeDdgStep(), EvalStep()]
-    runner = Runner(steps, queue, vault)
+    runner = Runner(list(_STEPS.values()), queue, vault)
 
     _STATUS_STYLE = {"done": "green", "error_retry": "yellow", "error_abort": "red"}
 

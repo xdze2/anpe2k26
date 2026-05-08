@@ -7,6 +7,7 @@ from pathlib import Path
 
 from anpe.bootstrap.pipeline import rows_to_jsonl_bytes, run as _pipeline_run
 from anpe.config import USER_DATA_DIR
+from anpe.engine.queue import Queue
 from anpe.engine.steps.base import Candidate, Log
 from anpe.engine.vault import Vault
 
@@ -17,8 +18,9 @@ _NODE_ID = "_bootstrap"
 class BootstrapStep:
     name = "bootstrap"
     version = "v2"
+    description = "Hash user_profile.yaml and produce a company listing JSONL in the vault."
 
-    def scan(self, refresh: bool = False, **_: object) -> list[Candidate]:
+    def scan(self, queue: Queue, refresh: bool = False, **_: object) -> list[Candidate]:
         """Emit one candidate keyed on the profile's content hash.
 
         refresh=True is stored in args so work() passes it to fetch_pair,
