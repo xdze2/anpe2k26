@@ -5,13 +5,13 @@ from __future__ import annotations
 from datetime import datetime, timezone
 from pathlib import Path
 
-_USER_DATA_DIR = Path(__file__).parent.parent / "user_data"
+from anpe.config import USER_DATA_DIR
 
 _MAX_WORDS = 400
 
 
 def _profile_dir() -> Path:
-    return _USER_DATA_DIR
+    return USER_DATA_DIR
 
 
 def active_profile_file() -> Path | None:

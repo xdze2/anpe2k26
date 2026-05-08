@@ -137,7 +137,7 @@ def prospect_seed(count: int) -> None:
 
     Example: anpe prospect seed --count 5
     """
-    from anpe.node_dir import USER_DATA_DIR
+    from anpe.config import USER_DATA_DIR
     from anpe.prospect.seed import seed_from_listing
 
     csv_path = USER_DATA_DIR / "company_listing.csv"
@@ -875,16 +875,17 @@ def bootstrap_run(refresh: bool) -> None:
     Re-running is safe -- cache is reused unless --refresh is passed.
     """
     import logging
+
     from pathlib import Path
 
     from anpe.bootstrap.pipeline import run as bootstrap_pipeline
+    from anpe.config import USER_DATA_DIR
 
     logging.basicConfig(level=logging.INFO, format="%(message)s")
 
-    root = Path.cwd()
-    profile_path = root / "user_data" / "user_profile.yaml"
-    output_path = root / "user_data" / "company_listing.csv"
-    cache_dir = root / "cache_data" / "bootstrap_cache"
+    profile_path = USER_DATA_DIR / "user_profile.yaml"
+    output_path = USER_DATA_DIR / "company_listing.csv"
+    cache_dir = Path("cache_data") / "bootstrap_cache"
 
     if not profile_path.exists():
         raise click.ClickException(f"user_profile.yaml not found at {profile_path}")

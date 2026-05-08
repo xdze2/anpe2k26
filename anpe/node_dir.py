@@ -12,9 +12,9 @@ import json
 import secrets
 from dataclasses import dataclass
 from datetime import datetime, timezone
-from pathlib import Path
 
-USER_DATA_DIR = Path(__file__).parent.parent / "user_data"
+from anpe.config import USER_DATA_DIR
+
 NODES_DIR = USER_DATA_DIR / "nodes"
 
 

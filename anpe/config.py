@@ -1,3 +1,5 @@
+from pathlib import Path
+
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
@@ -8,5 +10,9 @@ class Settings(BaseSettings):
     mistral_model: str = "mistral-small-latest"
     mistral_base_url: str = "https://api.mistral.ai/v1"
 
+    user_data_dir: Path = Path("user_vault")
+
 
 settings = Settings()  # type: ignore[call-arg]
+
+USER_DATA_DIR: Path = settings.user_data_dir
