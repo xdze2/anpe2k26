@@ -1,14 +1,12 @@
-"""Smoke tests for 'anpe prospect eval' and 'anpe prospect reeval' CLI commands."""
+"""Smoke tests for 'anpe prospect reeval' CLI command."""
 
 import json
 import pytest
 from click.testing import CliRunner
 from pathlib import Path
-from pydantic_ai.models.test import TestModel
 
 import anpe.profile as profile_mod
 from anpe.node_dir import NodeDir
-from anpe.prospect.eval import _agent
 from anpe.cli import cli
 
 
@@ -44,38 +42,11 @@ def _make_eval_ready_node(tmp_path: Path, node_id: str) -> NodeDir:
     return node
 
 
-def test_eval_help():
-    runner = CliRunner()
-    result = runner.invoke(cli, ["prospect", "eval", "--help"])
-    assert result.exit_code == 0
-    assert "eval" in result.output
-
-
 def test_reeval_help():
     runner = CliRunner()
     result = runner.invoke(cli, ["prospect", "reeval", "--help"])
     assert result.exit_code == 0
     assert "reeval" in result.output
-
-
-def test_eval_no_nodes(tmp_path):
-    runner = CliRunner()
-    result = runner.invoke(cli, ["prospect", "eval"])
-    assert result.exit_code == 0
-    assert "No nodes found" in result.output
-
-
-def test_eval_runs_one_step(tmp_path):
-    node = _make_eval_ready_node(tmp_path, "acme")
-    runner = CliRunner()
-    with _agent.override(model=TestModel(custom_output_args={
-        "score": "good", "fit": "small team", "dealbreakers": [], "uncertainty": "low",
-    })):
-        result = runner.invoke(cli, ["prospect", "eval", "-n", "1"])
-
-    assert result.exit_code == 0
-    assert "good" in result.output
-    assert node.pop_eval_pending() is None
 
 
 def test_reeval_no_profile(tmp_path):

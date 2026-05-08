@@ -81,11 +81,13 @@ class Queue:
     def claim(self, step: str, worker_id: str) -> Item | None:
         """Atomically claim one pending item for step. Returns None if queue is empty."""
         with self._conn:
-            # Find a pending uid: latest event is 'put' or 'error_retry'
+            # Find a pending uid: latest event is 'put' or 'error_retry'.
+            # Always read args from the original 'put' event row (error_retry has no args).
             row = self._conn.execute(
                 """
-                SELECT e.uid, e.node_id, e.args
+                SELECT e.uid, e.node_id, put_ev.args
                 FROM events e
+                JOIN events put_ev ON put_ev.uid = e.uid AND put_ev.step = e.step AND put_ev.event = 'put'
                 WHERE e.step = ?
                   AND e.id = (SELECT MAX(id) FROM events WHERE step = ? AND uid = e.uid)
                   AND e.event IN ('put', 'error_retry')

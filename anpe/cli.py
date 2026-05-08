@@ -1,9 +1,10 @@
-"""ANPE CLI — interactive chat + prospect commands."""
+"""ANPE CLI."""
 
 from __future__ import annotations
 
 import asyncio
-from collections.abc import AsyncIterable
+import json
+import sys
 from typing import TYPE_CHECKING
 
 import click
@@ -20,96 +21,6 @@ if TYPE_CHECKING:
 
 console = Console()
 
-_QUIT_WORDS = {"quit", "exit", "q", "quitter", "au revoir", "bye"}
-
-
-# ---------------------------------------------------------------------------
-# Chat helpers
-# ---------------------------------------------------------------------------
-
-
-def _print_header() -> None:
-    console.print()
-    console.print(" [bold cyan]ANPE[/] — Assistant Numérique Pour l'Emploi")
-    console.print(" [dim]tapez 'quitter' pour quitter[/]")
-    console.print()
-
-
-def _print_assistant(text: str) -> None:
-    console.print(f" [bold cyan]ANPE[/]  {text}")
-    console.print()
-
-
-async def _chat_loop() -> None:
-    from prompt_toolkit import PromptSession
-    from prompt_toolkit.formatted_text import HTML
-    from pydantic_ai import AgentStreamEvent, FunctionToolCallEvent, RunContext
-    from rich.columns import Columns
-    from rich.console import Group
-    from rich.live import Live
-    from rich.spinner import Spinner
-
-    from anpe.agent import agent
-    from anpe.config import settings
-
-    def _print_status(tokens_in: int, tokens_out: int) -> None:
-        parts = Text()
-        parts.append(f" {tokens_in} → {tokens_out} tokens", style="dim")
-        parts.append("   ", style="dim")
-        parts.append(settings.mistral_model, style="dim")
-        console.print(parts)
-        console.print()
-
-    async def _run_agent(user_text: str) -> tuple[str, int, int]:
-        tool_lines: list[Text] = []
-        spinner = Spinner("dots", style="yellow")
-
-        def _renderable() -> Group:
-            spinner_line = Columns([spinner, Text("  en attente…", style="dim")])
-            return Group(spinner_line, *tool_lines)
-
-        live = Live(_renderable(), console=console, transient=True, refresh_per_second=12)
-
-        async def _handle_events(
-            ctx: RunContext[None], events: AsyncIterable[AgentStreamEvent]
-        ) -> None:
-            async for event in events:
-                if isinstance(event, FunctionToolCallEvent):
-                    tool_lines.append(Text(f"   ⟳ {event.part.tool_name}", style="yellow"))
-                    live.update(_renderable())
-
-        with live:
-            result = await agent.run(user_text, event_stream_handler=_handle_events)
-
-        usage = result.usage()
-        return result.output, usage.input_tokens or 0, usage.output_tokens or 0
-
-    _print_header()
-    _print_assistant("Bonjour ! Comment puis-je vous aider ?")
-
-    session: PromptSession[str] = PromptSession()
-    prompt = HTML("<ansigreen><b> ❯</b></ansigreen> ")
-
-    while True:
-        try:
-            user_input = (await session.prompt_async(prompt)).strip()
-        except (EOFError, KeyboardInterrupt):
-            break
-
-        if not user_input:
-            continue
-        if user_input.lower() in _QUIT_WORDS:
-            break
-
-        console.print()
-        try:
-            output, tokens_in, tokens_out = await _run_agent(user_input)
-            _print_assistant(output)
-            _print_status(tokens_in, tokens_out)
-        except Exception as e:
-            console.print(f" [bold red]Erreur[/] {e}")
-            console.print()
-
 
 # ---------------------------------------------------------------------------
 # CLI group
@@ -118,13 +29,7 @@ async def _chat_loop() -> None:
 
 @click.group()
 def cli() -> None:
-    """ANPE — Assistant Numérique Pour l'Emploi."""
-
-
-@cli.command("chat")
-def chat() -> None:
-    """Start the interactive chat."""
-    asyncio.run(_chat_loop())
+    """ANPE -- Assistant Numerique Pour l'Emploi."""
 
 
 # ---------------------------------------------------------------------------
@@ -213,7 +118,7 @@ def prospect_list() -> None:
             score = eval_result.get("score", "")
             score_style = _SCORE_STYLE.get(score, "white")
             fit = eval_result.get("fit", "")
-            fit_snippet = fit[:60] + "…" if len(fit) > 60 else fit
+            fit_snippet = fit[:60] + "..." if len(fit) > 60 else fit
             eval_tag = f"  [dim]~[/][{score_style}]{score}[/]  [dim]{fit_snippet}[/]"
 
         console.print(
@@ -251,63 +156,6 @@ def prospect_seed(count: int) -> None:
     console.print(f"\n [dim]{len(created)} node(s) created.[/]")
 
 
-@prospect_group.command("run")
-@click.argument("node_ids", nargs=-1, metavar="[NODE_ID]...")
-@click.option("-n", "budget", default=1, show_default=True,
-              help="Total step budget across all nodes.")
-@click.option("--all-nodes", is_flag=True, help="Run on all existing nodes.")
-@click.option("--until-done", is_flag=True,
-              help="Run until all queues empty (ignores -n). Use with caution.")
-def prospect_run(
-    node_ids: tuple[str, ...], budget: int, all_nodes: bool, until_done: bool
-) -> None:
-    """Run the prospect pipeline (depth-first, total step budget).
-
-    \b
-    anpe prospect run                       1 step, all nodes
-    anpe prospect run -n 10                 10 steps total
-    anpe prospect run -n 5 node1 node2      5 steps on specific nodes
-    anpe prospect run --all-nodes -n 10     explicit node selection
-    anpe prospect run --all-nodes --until-done
-    """
-    from anpe.node_dir import all_node_ids_by_ctime
-    from anpe.prospect.pipeline import run_batch
-
-    if node_ids and all_nodes:
-        raise click.UsageError("NODE_IDs and --all-nodes are mutually exclusive.")
-    if until_done and budget != 1:
-        raise click.UsageError("-n and --until-done are mutually exclusive.")
-
-    if all_nodes:
-        ids = all_node_ids_by_ctime()
-    elif node_ids:
-        ids = list(node_ids)
-    else:
-        ids = all_node_ids_by_ctime()
-
-    if not ids:
-        console.print(" [dim]No nodes found.[/]")
-        return
-
-    missing = [nid for nid in ids if not NodeDir(nid).exists()]
-    if missing:
-        for nid in missing:
-            console.print(f" [bold red]Error[/] node {nid!r} not found")
-        return
-
-    effective_budget = None if until_done else budget
-
-    async def _run() -> None:
-        async for log in run_batch(ids, effective_budget):
-            if log.status == "empty_queue":
-                continue
-            _print_step_log(log)
-            if log.status == "blocked":
-                console.print(" [bold red]blocked[/] — stopping run")
-
-    asyncio.run(_run())
-
-
 @prospect_group.command("add_target")
 @click.argument("node_id")
 @click.argument("tool")
@@ -325,12 +173,11 @@ def add_target(node_id: str, tool: str, keyword: str) -> None:
         )
     node = NodeDir(node_id)
     if not node.exists():
-        console.print(f" [bold red]Error[/] node {node_id!r} not found — use 'prospect seed' to create nodes")
+        console.print(f" [bold red]Error[/] node {node_id!r} not found -- use 'prospect seed' to create nodes")
         return
     node.append_target(tool, keyword)
     console.print(f" [dim]node[/] [bold]{node_id}[/]")
     console.print(f" [dim]queued[/] [{tool}] {keyword}")
-
 
 
 @prospect_group.command("status")
@@ -395,7 +242,7 @@ def prospect_show(node_id: str) -> None:
         siren.get("naf"),
         siren.get("siren"),
     ] if p]
-    meta = "  ·  ".join(str(p) for p in meta_parts)
+    meta = "  .  ".join(str(p) for p in meta_parts)
 
     console.print(Rule(f"[bold]{name}[/]  [dim]{meta}[/]"))
 
@@ -427,7 +274,7 @@ def prospect_show(node_id: str) -> None:
         if dealbreakers:
             console.print(" dealbreakers:")
             for db in dealbreakers:
-                console.print(f"   [dim red]· {db}[/]")
+                console.print(f"   [dim red]. {db}[/]")
 
     next_targets = node.get_next_targets()
     if next_targets:
@@ -467,7 +314,7 @@ def prospect_resummarize(node_ids: tuple[str, ...], all_nodes: bool) -> None:
 
     Scans nodes for summarize_done entries whose summarize_version no longer
     matches the current constant (model or prompt changed). Appends a
-    resummarize event — the next 'anpe prospect run' will re-summarize them
+    resummarize event -- the next 'anpe run' will re-summarize them
     without re-fetching.
 
     \b
@@ -506,75 +353,58 @@ def prospect_resummarize(node_ids: tuple[str, ...], all_nodes: bool) -> None:
         console.print(f"\n [dim]{total} uid(s) queued for re-summarization.[/]")
 
 
-@prospect_group.command("eval")
+@prospect_group.command("reeval")
 @click.argument("node_ids", nargs=-1, metavar="[NODE_ID]...")
-@click.option("-n", "budget", default=1, show_default=True,
-              help="Total eval steps across all nodes.")
-@click.option("--all-nodes", is_flag=True, help="Run on all existing nodes.")
-@click.option("--until-done", is_flag=True,
-              help="Run until all eval queues empty (ignores -n).")
-def prospect_eval(
-    node_ids: tuple[str, ...], budget: int, all_nodes: bool, until_done: bool
-) -> None:
-    """Run the eval pipeline (score summaries against the user profile).
+@click.option("--all-nodes", is_flag=True, help="Check all existing nodes.")
+def prospect_reeval(node_ids: tuple[str, ...], all_nodes: bool) -> None:
+    """Sync the eval queue: enqueue any summarized node that has no current eval.
+
+    Covers two cases:
+    - Never enqueued (summarized before eval existed, or eval was never run).
+    - Stale (last eval used an older profile or eval_version).
+
+    Appends a new eval put for each affected node. The next 'anpe run' picks them up.
 
     \b
-    anpe prospect eval                       1 step, all nodes
-    anpe prospect eval -n 10                 10 steps total
-    anpe prospect eval -n 5 node1 node2      5 steps on specific nodes
-    anpe prospect eval --all-nodes --until-done
+    anpe prospect reeval                  check all nodes
+    anpe prospect reeval node1 node2      check specific nodes
     """
     from anpe.node_dir import all_node_ids_by_ctime
-    from anpe.prospect.eval_pipeline import EvalStepLog, run_eval_batch
+    from anpe.profile import active_profile_file
+    from anpe.prospect.eval import EVAL_VERSION
 
     if node_ids and all_nodes:
         raise click.UsageError("NODE_IDs and --all-nodes are mutually exclusive.")
-    if until_done and budget != 1:
-        raise click.UsageError("-n and --until-done are mutually exclusive.")
 
-    if all_nodes:
-        ids = all_node_ids_by_ctime()
-    elif node_ids:
-        ids = list(node_ids)
-    else:
-        ids = all_node_ids_by_ctime()
+    ids = list(node_ids) if node_ids else all_node_ids_by_ctime()
 
     if not ids:
         console.print(" [dim]No nodes found.[/]")
         return
 
-    missing = [nid for nid in ids if not NodeDir(nid).exists()]
-    if missing:
-        for nid in missing:
-            console.print(f" [bold red]Error[/] node {nid!r} not found")
+    profile_path = active_profile_file()
+    if profile_path is None:
+        console.print(" [bold red]Error[/] no profile file found -- run 'anpe profile update' first")
         return
 
-    _SCORE_STYLE = {
-        "good": "green",
-        "maybe": "yellow",
-        "discard": "red",
-        "enrich": "cyan",
-    }
+    total = 0
+    for node_id in ids:
+        node = NodeDir(node_id)
+        if not node.exists():
+            console.print(f" [bold red]Error[/] node {node_id!r} not found")
+            continue
+        sum_file = node.get_latest_sum_file()
+        if sum_file is None:
+            continue
+        if node.is_eval_stale(str(profile_path), EVAL_VERSION):
+            node.append_eval_put(f"summarize/{sum_file}", str(profile_path))
+            console.print(f" [dim]node[/] [bold]{node_id}[/]  [yellow]queued[/]")
+            total += 1
 
-    def _print_eval_log(log: EvalStepLog) -> None:
-        if log.status == "empty_queue":
-            return
-        status_style = {"ok": "green", "eval_error": "red", "no_profile": "red",
-                        "no_summary": "yellow"}.get(log.status, "white")
-        console.print(f" [dim]node[/]   [bold]{log.node_id}[/]")
-        if log.score:
-            score_style = _SCORE_STYLE.get(log.score, "white")
-            console.print(f" [dim]score[/]  [{score_style}]{log.score}[/]  {log.fit}")
-        else:
-            console.print(f" [dim]status[/] [{status_style}]{log.status}[/]")
-
-    effective_budget = None if until_done else budget
-
-    async def _run() -> None:
-        async for log in run_eval_batch(ids, effective_budget):
-            _print_eval_log(log)
-
-    asyncio.run(_run())
+    if total == 0:
+        console.print(" [dim]All evals are up to date.[/]")
+    else:
+        console.print(f"\n [dim]{total} node(s) queued for re-eval.[/]")
 
 
 @prospect_group.command("map")
@@ -582,25 +412,24 @@ def prospect_map() -> None:
     """Display a compact map of all nodes (one glyph per node).
 
     Glyphs by pipeline state:
-      ·  pending fetch          (dim)
+      .  pending fetch          (dim)
       !  fetch error            (red)
-      ○  fetched, not summarized (cyan)
-      ×  summarize error        (red)
-      –  not relevant           (yellow)
-      ◇  summarized, eval pending (cyan)
-      ‼  eval error             (red)
-      ∅  eval discarded         (dim)
+      o  fetched, not summarized (cyan)
+      x  summarize error        (red)
+      -  not relevant           (yellow)
+      <> summarized, eval pending (cyan)
+      !! eval error             (red)
+      0  eval discarded         (dim)
       ?  eval: enrich           (blue)
-      ▪  eval: maybe            (yellow)
-      ●  eval: good             (green)
-      ✗  eval: discard          (dim red)
+      *  eval: maybe            (yellow)
+      @  eval: good             (green)
+      X  eval: discard          (dim red)
     Grey background = user has reviewed the node.
 
     Example: anpe prospect map
     """
     from anpe.node_dir import all_node_ids_by_ctime
 
-    # (glyph, style, label)
     _STATES: dict[str, tuple[str, str, str]] = {
         "put":                   ("·", "dim",          "pending fetch"),
         "fetch_error":           ("!", "bold red",      "fetch error"),
@@ -619,23 +448,18 @@ def prospect_map() -> None:
     def _node_state(node_id: str) -> str:
         node = NodeDir(node_id)
 
-        # Derive fetch state from fetch.jsonl
         puts, latest = node._latest_event_per_uid()
         fetch_state = "put"
         if puts:
             last_events = [latest.get(uid, put)["event"] for uid, put in puts.items()]
-            # Pick worst/most-advanced state across all uids
             priority = [
                 "summarize_done", "summarize_not_relevant",
                 "fetch_done", "summarize_error", "fetch_error", "resummarize", "put",
             ]
-            # Best state = furthest along the pipeline
             fetch_state = max(last_events, key=lambda e: -priority.index(e) if e in priority else -99)
-            # Collapse resummarize → treat like put (pending)
             if fetch_state == "resummarize":
                 fetch_state = "put"
 
-        # Map fetch state to display state
         if fetch_state in ("put", "fetch_error", "summarize_error"):
             state = fetch_state
         elif fetch_state == "fetch_done":
@@ -643,7 +467,6 @@ def prospect_map() -> None:
         elif fetch_state == "summarize_not_relevant":
             state = "summarize_not_relevant"
         elif fetch_state == "summarize_done":
-            # Check eval queue
             last_eval = node._last_eval_event()
             if last_eval is None:
                 state = "summarize_pending_eval"
@@ -675,12 +498,10 @@ def prospect_map() -> None:
         return
 
     import math
-    from rich.text import Text
 
     width = console.width or 80
-    cell_width = 2  # glyph + space
+    cell_width = 2
     max_cols = (width - 2) // cell_width
-    # at least 3 rows
     min_rows = 3
     cols = min(max_cols, math.ceil(len(ids) / min_rows))
 
@@ -708,14 +529,12 @@ def prospect_map() -> None:
     if col_count:
         console.print(row)
 
-    # Counts by state
     console.print()
     counts: dict[str, int] = {}
     for node_id in ids:
         s = _node_state(node_id)
         counts[s] = counts.get(s, 0) + 1
 
-    # Legend — only show states that appear
     legend = Text(" ")
     for key, (glyph, style, label) in _STATES.items():
         if key not in counts:
@@ -727,59 +546,248 @@ def prospect_map() -> None:
     console.print(f" [dim]{len(ids)} nodes total[/]")
 
 
-@prospect_group.command("reeval")
-@click.argument("node_ids", nargs=-1, metavar="[NODE_ID]...")
-@click.option("--all-nodes", is_flag=True, help="Check all existing nodes.")
-def prospect_reeval(node_ids: tuple[str, ...], all_nodes: bool) -> None:
-    """Sync the eval queue: enqueue any summarized node that has no current eval.
+# ---------------------------------------------------------------------------
+# Engine commands — scan / put / run / step
+# ---------------------------------------------------------------------------
 
-    Covers two cases:
-    - Never enqueued (summarized before eval existed, or eval was never run).
-    - Stale (last eval used an older profile or eval_version).
+def _make_steps() -> dict[str, object]:
+    from anpe.engine.steps.eval import EvalStep
+    from anpe.engine.steps.fetch_ddg import FetchDdgStep
+    from anpe.engine.steps.summarize_ddg import SummarizeDdgStep
 
-    Appends a new eval put for each affected node. The next 'anpe prospect eval'
-    run picks them up.
+    steps = [FetchDdgStep(), SummarizeDdgStep(), EvalStep()]
+    return {s.name: s for s in steps}
+
+
+_KNOWN_STEPS = ["fetch_ddg", "summarize_ddg", "eval"]
+
+
+@cli.command("scan")
+@click.argument("step", type=click.Choice(_KNOWN_STEPS))
+@click.option("--min-score", default=None, help="(eval) minimum score: discard|enrich|maybe|good")
+@click.option("--exclude-reaction", default=None, help="(eval) skip nodes with this reaction")
+@click.option("--naf-prefix", default=None, help="(summarize_ddg) filter by NAF code prefix")
+def cmd_scan(
+    step: str,
+    min_score: str | None,
+    exclude_reaction: str | None,
+    naf_prefix: str | None,
+) -> None:
+    """List candidates for STEP as JSON, one per line.
 
     \b
-    anpe prospect reeval                  check all nodes
-    anpe prospect reeval node1 node2      check specific nodes
+    anpe scan eval
+    anpe scan eval --min-score=maybe
+    anpe scan summarize_ddg --naf-prefix=62
+    anpe scan fetch_ddg
     """
-    from anpe.node_dir import all_node_ids_by_ctime
-    from anpe.profile import active_profile_file
-    from anpe.prospect.eval import EVAL_VERSION
+    steps = _make_steps()
+    step_obj = steps[step]
 
-    if node_ids and all_nodes:
-        raise click.UsageError("NODE_IDs and --all-nodes are mutually exclusive.")
+    flags: dict[str, object] = {}
+    if min_score is not None:
+        flags["min_score"] = min_score
+    if exclude_reaction is not None:
+        flags["exclude_reaction"] = exclude_reaction
+    if naf_prefix is not None:
+        flags["naf_prefix"] = naf_prefix
 
-    ids = list(node_ids) if node_ids else all_node_ids_by_ctime()
+    from anpe.engine.steps.base import Candidate
+    candidates: list[Candidate] = step_obj.scan(**flags)  # type: ignore[union-attr]
 
-    if not ids:
-        console.print(" [dim]No nodes found.[/]")
-        return
+    for c in candidates:
+        sys.stdout.write(json.dumps({
+            "step": c.step,
+            "node_id": c.node_id,
+            "args": c.args,
+            "context": c.context,
+        }) + "\n")
 
-    profile_path = active_profile_file()
-    if profile_path is None:
-        console.print(" [bold red]Error[/] no profile file found — run 'anpe profile update' first")
-        return
 
+@cli.command("put")
+def cmd_put() -> None:
+    """Read candidates from stdin and enqueue them.
+
+    Reads JSON lines produced by 'anpe scan'. Each line must have
+    step, node_id, and args fields.
+
+    \b
+    anpe scan eval | anpe put
+    """
+    from anpe.engine.queue import Queue
+    from anpe.engine.steps.eval import EvalStep
+    from anpe.engine.steps.fetch_ddg import FetchDdgStep
+    from anpe.engine.steps.summarize_ddg import SummarizeDdgStep
+
+    _versions = {
+        FetchDdgStep.name: FetchDdgStep.version,
+        SummarizeDdgStep.name: SummarizeDdgStep.version,
+        EvalStep.name: EvalStep.version,
+    }
+
+    queue = Queue()
     total = 0
-    for node_id in ids:
-        node = NodeDir(node_id)
-        if not node.exists():
-            console.print(f" [bold red]Error[/] node {node_id!r} not found")
-            continue
-        sum_file = node.get_latest_sum_file()
-        if sum_file is None:
-            continue  # not yet summarized — nothing to eval
-        if node.is_eval_stale(str(profile_path), EVAL_VERSION):
-            node.append_eval_put(f"summarize/{sum_file}", str(profile_path))
-            console.print(f" [dim]node[/] [bold]{node_id}[/]  [yellow]queued[/]")
-            total += 1
+    skipped = 0
 
-    if total == 0:
-        console.print(" [dim]All evals are up to date.[/]")
-    else:
-        console.print(f"\n [dim]{total} node(s) queued for re-eval.[/]")
+    for line in sys.stdin:
+        line = line.strip()
+        if not line:
+            continue
+        try:
+            item = json.loads(line)
+        except json.JSONDecodeError as e:
+            console.print(f" [bold red]Error[/] invalid JSON: {e}", file=sys.stderr)
+            continue
+
+        step = item.get("step", "")
+        node_id = item.get("node_id", "")
+        args = item.get("args", {})
+        version = _versions.get(step, "v1")
+
+        before = queue.pending(step)
+        uid = queue.put(node_id, step, version, args)
+        after = queue.pending(step)
+
+        if len(after) > len(before):
+            console.print(f" [green]queued[/]  {step}  {node_id}  [dim]{uid}[/]")
+            total += 1
+        else:
+            skipped += 1
+
+    queue.close()
+    console.print(f"\n [dim]{total} item(s) queued, {skipped} already present.[/]")
+
+
+@cli.command("run")
+@click.option("--step", "step_name", default=None, type=click.Choice(_KNOWN_STEPS),
+              help="Restrict to one step (default: all).")
+@click.option("--budget", default=None, type=int,
+              help="Maximum number of items to run.")
+def cmd_run(step_name: str | None, budget: int | None) -> None:
+    """Drain the queue and execute pending items.
+
+    \b
+    anpe run                          drain all steps
+    anpe run --step=eval              only eval items
+    anpe run --step=fetch_ddg --budget=5
+    """
+    from anpe.engine.queue import Queue
+    from anpe.engine.runner import Runner
+    from anpe.engine.steps.eval import EvalStep
+    from anpe.engine.steps.fetch_ddg import FetchDdgStep
+    from anpe.engine.steps.summarize_ddg import SummarizeDdgStep
+    from anpe.engine.vault import Vault
+
+    steps = [FetchDdgStep(), SummarizeDdgStep(), EvalStep()]
+    queue = Queue()
+    vault = Vault()
+    runner = Runner(steps, queue, vault)
+
+    _STATUS_STYLE = {"done": "green", "error_retry": "yellow", "error_abort": "red"}
+
+    async def _run() -> None:
+        results = await runner.run_until_empty(step_name=step_name, budget=budget)
+        for r in results:
+            style = _STATUS_STYLE.get(r.status, "white")
+            console.print(f" [{style}]{r.status}[/]  {r.step}  {r.node_id}  [dim]{r.uid}[/]")
+            if r.error:
+                console.print(f"   [dim red]{r.error}[/]")
+        console.print(f"\n [dim]{len(results)} item(s) processed.[/]")
+
+    asyncio.run(_run())
+    queue.close()
+
+
+@cli.command("step")
+@click.argument("step_name", metavar="STEP", type=click.Choice(_KNOWN_STEPS))
+@click.option("--min-score", default=None, help="(eval) minimum score")
+@click.option("--exclude-reaction", default=None, help="(eval) skip nodes with this reaction")
+@click.option("--naf-prefix", default=None, help="(summarize_ddg) filter by NAF code prefix")
+@click.option("--budget", default=None, type=int, help="Maximum items to run.")
+def cmd_step(
+    step_name: str,
+    min_score: str | None,
+    exclude_reaction: str | None,
+    naf_prefix: str | None,
+    budget: int | None,
+) -> None:
+    """Scan + put + run for one step in one command.
+
+    \b
+    anpe step eval
+    anpe step eval --min-score=maybe --budget=10
+    anpe step summarize_ddg --naf-prefix=62
+    """
+    from anpe.engine.queue import Queue
+    from anpe.engine.runner import Runner
+    from anpe.engine.steps.eval import EvalStep
+    from anpe.engine.steps.fetch_ddg import FetchDdgStep
+    from anpe.engine.steps.summarize_ddg import SummarizeDdgStep
+    from anpe.engine.vault import Vault
+
+    steps_map = _make_steps()
+    step_obj = steps_map[step_name]
+
+    flags: dict[str, object] = {}
+    if min_score is not None:
+        flags["min_score"] = min_score
+    if exclude_reaction is not None:
+        flags["exclude_reaction"] = exclude_reaction
+    if naf_prefix is not None:
+        flags["naf_prefix"] = naf_prefix
+
+    candidates = step_obj.scan(**flags)  # type: ignore[union-attr]
+
+    if not candidates:
+        console.print(" [dim]No candidates.[/]")
+        return
+
+    console.print(f" [dim]{len(candidates)} candidate(s) found.[/]")
+
+    _versions = {
+        FetchDdgStep.name: FetchDdgStep.version,
+        SummarizeDdgStep.name: SummarizeDdgStep.version,
+        EvalStep.name: EvalStep.version,
+    }
+
+    queue = Queue()
+    queued = 0
+    version = _versions.get(step_name, "v1")
+    for c in candidates:
+        before = len(queue.pending(step_name))
+        queue.put(c.node_id, step_name, version, c.args)
+        after = len(queue.pending(step_name))
+        if after > before:
+            queued += 1
+
+    console.print(f" [dim]{queued} item(s) queued ({len(candidates) - queued} already present).[/]")
+
+    if queued == 0:
+        queue.close()
+        return
+
+    vault = Vault()
+    steps = [FetchDdgStep(), SummarizeDdgStep(), EvalStep()]
+    runner = Runner(steps, queue, vault)
+
+    _STATUS_STYLE = {"done": "green", "error_retry": "yellow", "error_abort": "red"}
+
+    async def _run() -> None:
+        results = await runner.run_until_empty(step_name=step_name, budget=budget)
+        for r in results:
+            style = _STATUS_STYLE.get(r.status, "white")
+            console.print(f" [{style}]{r.status}[/]  {r.node_id}  [dim]{r.uid}[/]")
+            if r.error:
+                console.print(f"   [dim red]{r.error}[/]")
+        console.print(f"\n [dim]{len(results)} item(s) processed.[/]")
+
+    asyncio.run(_run())
+    queue.close()
+
+
+# ---------------------------------------------------------------------------
+# Profile group
+# ---------------------------------------------------------------------------
 
 
 @cli.group("profile")
@@ -808,11 +816,11 @@ def profile_update(dry_run: bool) -> None:
         siren = node.get_siren_meta()
         name = siren.get("name") or node_id
         parts = [p for p in [siren.get("city"), siren.get("headcount")] if p]
-        meta = " · ".join(str(p) for p in parts)
+        meta = " . ".join(str(p) for p in parts)
         reaction = review["reaction"]
         summary = node.get_latest_summary().strip()
         summary_snippet = " ".join(summary.split())[:150] if summary else ""
-        line = f"- [{name}] {meta} — \"{reaction}\""
+        line = f"- [{name}] {meta} -- \"{reaction}\""
         if summary_snippet:
             line += f"\n  {summary_snippet}"
         reactions.append(line)
@@ -822,11 +830,11 @@ def profile_update(dry_run: bool) -> None:
         return
 
     profile = read_profile()
-    profile_block = profile if profile.strip() else "(empty — not yet filled)"
+    profile_block = profile if profile.strip() else "(empty -- not yet filled)"
 
     prompt = f"""\
 You are updating a job-search profile based on the user's reactions to company summaries.
-Be conservative — only update what the reactions clearly support.
+Be conservative -- only update what the reactions clearly support.
 Return the full updated profile text.
 
 Current profile:
@@ -847,6 +855,11 @@ Update the profile to reflect what these reactions reveal about what the user is
         console.print(" [yellow]Live profile update not yet implemented. Use --dry-run to print the prompt.[/]")
 
 
+# ---------------------------------------------------------------------------
+# Bootstrap group
+# ---------------------------------------------------------------------------
+
+
 @cli.group("bootstrap")
 def bootstrap_group() -> None:
     """Generate company listing from SIRENE API."""
@@ -859,7 +872,7 @@ def bootstrap_run(refresh: bool) -> None:
 
     Reads user_data/user_profile.yaml from the project root.
     Writes output to user_data/company_listing.csv.
-    Re-running is safe — cache is reused unless --refresh is passed.
+    Re-running is safe -- cache is reused unless --refresh is passed.
     """
     import logging
     from pathlib import Path
@@ -882,7 +895,7 @@ def bootstrap_run(refresh: bool) -> None:
         console.print(" [yellow]--refresh: cache will be invalidated[/]")
 
     count = bootstrap_pipeline(profile_path, output_path, cache_dir, refresh=refresh)
-    console.print(f" [bold green]✓[/] {count} companies written to {output_path}")
+    console.print(f" [bold green]ok[/] {count} companies written to {output_path}")
 
 
 def run() -> None:
