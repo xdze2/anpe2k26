@@ -155,6 +155,39 @@ class Queue:
         ).fetchall()
         return [Item(uid=r[0], node_id=r[1], step=step, args=json.loads(r[2])) for r in rows]
 
+    def counts(self) -> dict[str, dict[str, int]]:
+        """Return {step: {event: count}} using each item's latest event."""
+        rows = self._conn.execute(
+            """
+            SELECT step, event, COUNT(*) as n
+            FROM events
+            WHERE id IN (SELECT MAX(id) FROM events GROUP BY uid)
+            GROUP BY step, event
+            ORDER BY step, event
+            """
+        ).fetchall()
+        result: dict[str, dict[str, int]] = {}
+        for step, event, n in rows:
+            result.setdefault(step, {})[event] = n
+        return result
+
+    def node_history(self, node_id: str, step: str | None = None) -> list[dict]:  # type: ignore[type-arg]
+        """Return all events for node_id ordered by id, optionally filtered by step."""
+        if step:
+            rows = self._conn.execute(
+                "SELECT id, uid, step, event, ts, args, outputs, worker_id, error "
+                "FROM events WHERE node_id = ? AND step = ? ORDER BY id",
+                (node_id, step),
+            ).fetchall()
+        else:
+            rows = self._conn.execute(
+                "SELECT id, uid, step, event, ts, args, outputs, worker_id, error "
+                "FROM events WHERE node_id = ? ORDER BY id",
+                (node_id,),
+            ).fetchall()
+        keys = ["id", "uid", "step", "event", "ts", "args", "outputs", "worker_id", "error"]
+        return [dict(zip(keys, r)) for r in rows]
+
     def stale_claims(self, step: str, older_than_s: int = 300) -> list[Item]:
         """Return items claimed but not finished within older_than_s seconds."""
         rows = self._conn.execute(

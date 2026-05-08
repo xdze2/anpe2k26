@@ -804,6 +804,137 @@ def cmd_step(
 
 
 # ---------------------------------------------------------------------------
+# Jobs group
+# ---------------------------------------------------------------------------
+
+
+@cli.group("jobs")
+def jobs_group() -> None:
+    """Inspect the engine job queue."""
+
+
+@jobs_group.command("status")
+@click.option("--step", "step_name", default=None, type=click.Choice(_KNOWN_STEPS),
+              help="Filter to one step.")
+def jobs_status(step_name: str | None) -> None:
+    """Show per-step job counts.
+
+    \b
+    anpe jobs status
+    anpe jobs status --step=eval
+    """
+    from anpe.engine.queue import Queue
+
+    queue = Queue()
+    all_counts = queue.counts()
+    queue.close()
+
+    if step_name:
+        all_counts = {k: v for k, v in all_counts.items() if k == step_name}
+
+    if not all_counts:
+        console.print(" [dim]Queue is empty.[/]")
+        return
+
+    from rich.table import Table
+
+    col_events = ["put", "error_retry", "claimed", "done", "error_abort"]
+    _COL_LABEL = {
+        "put":         "pending",
+        "error_retry": "retry",
+        "claimed":     "claimed",
+        "done":        "done",
+        "error_abort": "abort",
+    }
+    _COL_STYLE = {
+        "put":         "yellow",
+        "error_retry": "yellow",
+        "claimed":     "cyan",
+        "done":        "green",
+        "error_abort": "red",
+    }
+
+    table = Table(box=None, pad_edge=True, show_header=True, header_style="dim")
+    table.add_column("step", style="bold", no_wrap=True)
+    for ev in col_events:
+        table.add_column(_COL_LABEL[ev], justify="right", style=_COL_STYLE[ev])
+
+    total_pending = 0
+    for step, counts in sorted(all_counts.items()):
+        cells = []
+        for ev in col_events:
+            n = counts.get(ev, 0)
+            cells.append(str(n) if n else "[dim]–[/]")
+        table.add_row(step, *cells)
+        total_pending += counts.get("put", 0) + counts.get("error_retry", 0)
+
+    console.print(table)
+    console.print(f" [dim]{total_pending} pending total[/]")
+
+
+@jobs_group.command("history")
+@click.argument("node_id")
+@click.option("--step", "step_name", default=None, type=click.Choice(_KNOWN_STEPS),
+              help="Filter to one step.")
+def jobs_history(node_id: str, step_name: str | None) -> None:
+    """Show all queue events for NODE_ID.
+
+    \b
+    anpe jobs history acme_123456789
+    anpe jobs history acme_123456789 --step=eval
+    """
+    from anpe.engine.queue import Queue
+
+    queue = Queue()
+    events = queue.node_history(node_id, step=step_name)
+    queue.close()
+
+    if not events:
+        console.print(f" [dim]No events for node {node_id!r}.[/]")
+        return
+
+    _EVENT_STYLE = {
+        "put":          "yellow",
+        "claimed":      "cyan",
+        "done":         "green",
+        "error_retry":  "yellow",
+        "error_abort":  "red",
+    }
+
+    console.print(f" [dim]node[/] [bold]{node_id}[/]")
+    console.print()
+
+    for ev in events:
+        ts = ev["ts"][:16].replace("T", " ") if ev["ts"] else ""
+        style = _EVENT_STYLE.get(ev["event"], "white")
+        uid_short = ev["uid"][:8] if ev["uid"] else ""
+        detail = ""
+        if ev["event"] == "put" and ev["args"]:
+            try:
+                args = json.loads(ev["args"])
+                detail = "  " + "  ".join(f"[dim]{k}=[/]{str(v)[:40]}" for k, v in args.items())
+            except Exception:
+                pass
+        elif ev["event"] == "done" and ev["outputs"]:
+            try:
+                outputs = json.loads(ev["outputs"])
+                detail = "  → " + "  ".join(f"[dim]{k}=[/]{str(v)[:40]}" for k, v in outputs.items())
+            except Exception:
+                pass
+        elif ev["error"]:
+            detail = f"  [dim red]{ev['error']}[/]"
+        elif ev["worker_id"]:
+            detail = f"  [dim]worker={ev['worker_id']}[/]"
+
+        console.print(
+            f" [dim]{ts}[/]  [{style}]{ev['event']:<14}[/{style}]"
+            f"  [dim]{ev['step']:<16}[/]  [dim]{uid_short}[/]{detail}"
+        )
+
+    console.print()
+
+
+# ---------------------------------------------------------------------------
 # Profile group
 # ---------------------------------------------------------------------------
 
