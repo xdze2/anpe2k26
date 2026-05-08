@@ -11,7 +11,7 @@ from click.testing import CliRunner
 from anpe.cli import cli
 from anpe.engine.queue import Queue
 from anpe.engine.runner import Runner
-from anpe.engine.steps.base import Candidate
+from anpe.engine.steps.base import Candidate, FatalError, RetryableError
 from anpe.engine.vault import Vault
 
 
@@ -38,7 +38,7 @@ class _ErrorStep:
         return []
 
     async def work(self, args: dict, vault: Vault, log) -> dict:  # type: ignore[type-arg]
-        raise RuntimeError("retryable failure")
+        raise RetryableError("retryable failure")
 
 
 class _FatalStep:
@@ -49,7 +49,7 @@ class _FatalStep:
         return []
 
     async def work(self, args: dict, vault: Vault, log) -> dict:  # type: ignore[type-arg]
-        raise ValueError("fatal failure")
+        raise FatalError("fatal failure")
 
 
 # ---------------------------------------------------------------------------

@@ -61,11 +61,10 @@ class Queue:
 
     def put(self, node_id: str, step: str, version: str, args: dict, force: bool = False) -> str:  # type: ignore[type-arg]
         """Enqueue a work item. Returns uid. Idempotent unless force=True."""
-        uid = _content_uid(step, version, args)
         if force:
-            # perturb uid so this is treated as a distinct item
             import secrets
-            uid = uid + secrets.token_hex(4)
+            args = {**args, "_nonce": secrets.token_hex(4)}
+        uid = _content_uid(step, version, args)
 
         with self._conn:
             # Check if this uid already has any event — if so, skip.

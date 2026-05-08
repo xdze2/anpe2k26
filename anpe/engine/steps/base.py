@@ -5,6 +5,14 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 from typing import Callable, Protocol
 
+
+class RetryableError(Exception):
+    """Step failed transiently; the item will be retried in the next run."""
+
+
+class FatalError(Exception):
+    """Step failed permanently; the item will not be retried."""
+
 from anpe.engine.queue import Queue
 from anpe.engine.rate_gate import NoGate, RateGate
 from anpe.engine.vault import Vault

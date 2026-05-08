@@ -6,7 +6,7 @@ import json
 
 from anpe.engine.queue import Queue
 from anpe.engine.steps import api_throttles
-from anpe.engine.steps.base import Candidate, Log
+from anpe.engine.steps.base import Candidate, FatalError, Log, RetryableError
 from anpe.engine.vault import Vault
 from anpe.prospect.errors import FetchBlockedError, FetchNotFoundError, FetchRetryableError
 from anpe.prospect.registry import FETCH_TOOLS
@@ -62,13 +62,13 @@ class FetchDdgStep:
             raw_data = fetch_tool.fetch(target)
         except FetchNotFoundError as e:
             log(f"not_found: {e}")
-            raise ValueError(f"not_found: {e}") from e
+            raise FatalError(f"not_found: {e}") from e
         except FetchRetryableError as e:
             log(f"retryable error: {e}")
-            raise RuntimeError(f"retryable: {e}") from e
+            raise RetryableError(f"retryable: {e}") from e
         except FetchBlockedError as e:
             log(f"blocked: {e}")
-            raise RuntimeError(f"blocked: {e}") from e
+            raise RetryableError(f"blocked: {e}") from e
 
         log(f"fetched {len(raw_data)} chars")
         uri = vault.store(node_id, self.name, node_id[:8], fetch_tool.raw_ext, raw_data.encode())

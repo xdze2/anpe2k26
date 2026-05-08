@@ -9,7 +9,7 @@ from dataclasses import dataclass, field
 from anpe.engine.logger import StepLogger
 from anpe.engine.queue import Queue
 from anpe.engine.rate_gate import NoGate
-from anpe.engine.steps.base import Step
+from anpe.engine.steps.base import FatalError, RetryableError, Step
 from anpe.engine.vault import Vault
 
 CLAIM_TIMEOUT_S = 300
@@ -67,9 +67,10 @@ class Runner:
         if step is None:
             return
 
+        # Recover stale claims once at startup, before entering the claim loop.
+        self._sweep_stale(step_name)
+
         while True:
-            # Recover stale claims before trying to claim a new item.
-            self._sweep_stale(step_name)
 
             async with self._lock:
                 if budget is not None and len(self._results) >= budget:
@@ -105,13 +106,15 @@ class Runner:
                     uid=item.uid, node_id=item.node_id, step=step_name,
                     status="done", outputs=outputs,
                 )
-            except RuntimeError as e:
+            except asyncio.CancelledError:
+                raise
+            except RetryableError as e:
                 self._queue.mark_error(item.uid, step_name, item.node_id, str(e), retryable=True)
                 result = RunResult(
                     uid=item.uid, node_id=item.node_id, step=step_name,
                     status="error_retry", error=str(e),
                 )
-            except Exception as e:
+            except (FatalError, Exception) as e:
                 self._queue.mark_error(item.uid, step_name, item.node_id, str(e), retryable=False)
                 result = RunResult(
                     uid=item.uid, node_id=item.node_id, step=step_name,

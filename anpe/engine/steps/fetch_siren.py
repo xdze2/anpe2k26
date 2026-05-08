@@ -6,7 +6,7 @@ import json
 
 from anpe.engine.queue import Queue
 from anpe.engine.steps import api_throttles
-from anpe.engine.steps.base import Candidate, Log
+from anpe.engine.steps.base import Candidate, FatalError, Log, RetryableError
 from anpe.engine.vault import Vault
 from anpe.prospect.errors import FetchNotFoundError, FetchRetryableError
 from anpe.prospect.seed import node_id_for
@@ -65,10 +65,10 @@ class FetchSirenStep:
             raw_data = siren_fetch(siren)
         except FetchNotFoundError as e:
             log(f"not_found: {e}")
-            raise ValueError(f"not_found: {e}") from e
+            raise FatalError(f"not_found: {e}") from e
         except FetchRetryableError as e:
             log(f"retryable error: {e}")
-            raise RuntimeError(f"retryable: {e}") from e
+            raise RetryableError(f"retryable: {e}") from e
 
         log(f"fetched {len(raw_data)} chars")
         uri = vault.store(node_id, self.name, node_id[:8], "json", raw_data.encode())
