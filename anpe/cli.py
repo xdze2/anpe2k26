@@ -780,7 +780,7 @@ def cmd_step(
 
     console.print(f" [dim]{queued} item(s) queued ({len(candidates) - queued} already present).[/]")
 
-    if queued == 0:
+    if queued == 0 and not queue.stale_claims(step_name):
         queue.close()
         return
 
