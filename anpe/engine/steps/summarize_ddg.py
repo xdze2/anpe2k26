@@ -18,7 +18,7 @@ _DDG_STEP = "fetch_ddg"
 
 class SummarizeDdgStep:
     name = "summarize_ddg"
-    version = SUMMARIZE_VERSION
+    version = SUMMARIZE_VERSION + ".2"
     description = "Summarize raw DDG fetch results with an LLM and extract follow-up targets."
     rate_gate = api_throttles.MISTRAL
 
@@ -65,12 +65,19 @@ class SummarizeDdgStep:
 
         result = await fetch_tool.summarize(raw_data, "", company_profile)
         log(f"summarize done  status={result.status}  model={result.model}")
-        return {
+
+        payload = {
             "status": result.status,
             "summary": result.summary,
             "model": result.model,
             "version": result.version,
+            "prompt": result.prompt,
         }
+        summary_uri = vault.store(
+            node_id, self.name, node_id[:8], "json", json.dumps(payload, indent=2, ensure_ascii=False).encode()
+        )
+        log(f"saved → {summary_uri}")
+        return {"summary_uri": summary_uri, **payload}
 
 
 def _ddg_done_events(queue: Queue) -> list[dict]:  # type: ignore[type-arg]
