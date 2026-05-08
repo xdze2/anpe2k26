@@ -188,6 +188,14 @@ class Queue:
         keys = ["id", "uid", "step", "event", "ts", "args", "outputs", "worker_id", "error"]
         return [dict(zip(keys, r)) for r in rows]
 
+    def is_done(self, step: str, version: str, args: dict) -> bool:  # type: ignore[type-arg]
+        """Return True if a done event exists for this content-addressed uid."""
+        uid = _content_uid(step, version, args)
+        row = self._conn.execute(
+            "SELECT 1 FROM events WHERE uid = ? AND event = 'done' LIMIT 1", (uid,)
+        ).fetchone()
+        return row is not None
+
     def stale_claims(self, step: str, older_than_s: int = 300) -> list[Item]:
         """Return items claimed but not finished within older_than_s seconds."""
         rows = self._conn.execute(

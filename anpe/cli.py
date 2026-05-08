@@ -745,9 +745,10 @@ def cmd_step(
 
     queued = 0
     version = step_obj.version
+    force = bool(flags.get("refresh"))
     for c in candidates:
         before = len(queue.pending(step_name))
-        queue.put(c.node_id, step_name, version, c.args)
+        queue.put(c.node_id, step_name, version, c.args, force=force)
         after = len(queue.pending(step_name))
         if after > before:
             queued += 1

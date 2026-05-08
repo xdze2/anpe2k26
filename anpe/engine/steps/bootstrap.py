@@ -23,23 +23,20 @@ class BootstrapStep:
     def scan(self, queue: Queue, refresh: bool = False, **_: object) -> list[Candidate]:
         """Emit one candidate keyed on the profile's content hash.
 
-        refresh=True is stored in args so work() passes it to fetch_pair,
-        which deletes cached API pages and re-fetches from scratch.
+        Suppressed if a done event already exists for these args, unless
+        refresh=True (which forces re-emission for use with put --force).
         """
         if not _PROFILE_PATH.exists():
             return []
         profile_hash = hashlib.sha256(_PROFILE_PATH.read_bytes()).hexdigest()[:16]
-        return [
-            Candidate(
-                step=self.name,
-                node_id=_NODE_ID,
-                args={
-                    "profile_hash": profile_hash,
-                    "profile_path": str(_PROFILE_PATH),
-                    "refresh": refresh,
-                },
-            )
-        ]
+        args = {
+            "profile_hash": profile_hash,
+            "profile_path": str(_PROFILE_PATH),
+            "refresh": False,
+        }
+        if not refresh and queue.is_done(self.name, self.version, args):
+            return []
+        return [Candidate(step=self.name, node_id=_NODE_ID, args=args)]
 
     async def work(self, args: dict, vault: Vault, log: Log) -> dict:  # type: ignore[type-arg]
         profile_path = Path(args["profile_path"])
