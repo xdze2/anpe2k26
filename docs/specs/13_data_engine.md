@@ -377,6 +377,23 @@ The runner does **not** trigger downstream work. It does not call `scan` or
 doable is something the next `scan` invocation discovers. This is the rule that
 keeps intent and execution separated.
 
+### error_retry is between sessions, not within a session
+
+`error_retry` means "try again next time `anpe run` is invoked" — not "retry
+immediately in this worker loop." Within a single runner session, each uid is
+attempted at most once. The runner tracks attempted uids and passes them as
+`skip_uids` to `claim()`, which excludes them from the SQL query.
+
+This avoids an infinite retry loop: without the skip, a work function that
+always raises `RuntimeError` would be claimed, fail, be re-marked `error_retry`,
+claimed again, and cycle forever. The queue stays non-empty, the worker never
+exits.
+
+The stale-claim sweep (`CLAIM_TIMEOUT_S`) is a separate concern: it handles
+items claimed by a worker that crashed before finishing — those get a fresh
+`error_retry` event and are available to the *next* session. It does not
+interact with the within-session skip set.
+
 ### Rate limiting
 
 One `RateLimiter` per external resource (OpenRouter, DDG, SIREN), shared across

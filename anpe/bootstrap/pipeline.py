@@ -1,4 +1,4 @@
-"""Bootstrap pipeline: generate company_listing.csv from user_profile.yaml.
+"""Bootstrap pipeline: build the company listing from user_profile.yaml.
 
 Steps:
   1. Load user_profile.yaml
@@ -7,11 +7,12 @@ Steps:
   4. Filter by distance from each location's lat/lon
   5. Filter by company-level tranche_effectif range
   6. Deduplicate by SIRET
-  7. Write user_data/company_listing.csv
+  7. Return rows as a list of dicts (caller writes to vault/CSV)
 """
 
 from __future__ import annotations
 
+import io
 import csv
 import logging
 from dataclasses import dataclass, field
@@ -111,16 +112,10 @@ def _row_from_etab(
     }
 
 
-def run(
-    profile_path: Path,
-    output_path: Path,
-    cache_dir: Path,
-    refresh: bool = False,
-) -> int:
-    """Run the full bootstrap pipeline. Returns number of rows written."""
+def run(profile_path: Path, refresh: bool = False) -> list[dict[str, Any]]:
+    """Run the full bootstrap pipeline. Returns rows as a list of dicts."""
     profile = load_profile(profile_path)
 
-    # Collect all (departement, naf_code) pairs
     pairs: list[tuple[str, str]] = [
         (dep, naf)
         for loc in profile.locations
@@ -128,15 +123,13 @@ def run(
         for naf in profile.naf_codes
     ]
 
-    # Steps 2–3: fetch + extract
-    all_results: list[dict] = []
+    all_results: list[dict] = []  # type: ignore[type-arg]
     for dep, naf in pairs:
-        results = fetch_pair(dep, naf, profile.etat_administratif, cache_dir, refresh)
+        results = fetch_pair(dep, naf, profile.etat_administratif, refresh)
         all_results.extend(results)
 
     logger.info("Total raw results across all pairs: %d", len(all_results))
 
-    # Step 4–5: filter by distance and size, collecting rows
     rows: list[dict[str, Any]] = []
     seen_sirets: set[str] = set()
 
@@ -161,14 +154,16 @@ def run(
                 if d is not None:
                     seen_sirets.add(siret)
                     rows.append(_row_from_etab(etab, result, d, loc.city))
-                    break  # first matching location wins
+                    break
 
-    # Step 7: write CSV
-    output_path.parent.mkdir(parents=True, exist_ok=True)
-    with open(output_path, "w", newline="", encoding="utf-8") as f:
-        writer = csv.DictWriter(f, fieldnames=_OUTPUT_COLUMNS)
-        writer.writeheader()
-        writer.writerows(rows)
+    logger.info("Found %d companies", len(rows))
+    return rows
 
-    logger.info("Wrote %d rows to %s", len(rows), output_path)
-    return len(rows)
+
+def rows_to_csv_bytes(rows: list[dict[str, Any]]) -> bytes:
+    """Serialize rows to CSV bytes (UTF-8)."""
+    buf = io.StringIO()
+    writer = csv.DictWriter(buf, fieldnames=_OUTPUT_COLUMNS)
+    writer.writeheader()
+    writer.writerows(rows)
+    return buf.getvalue().encode("utf-8")

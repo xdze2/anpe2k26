@@ -551,15 +551,16 @@ def prospect_map() -> None:
 # ---------------------------------------------------------------------------
 
 def _make_steps() -> dict[str, object]:
+    from anpe.engine.steps.bootstrap import BootstrapStep
     from anpe.engine.steps.eval import EvalStep
     from anpe.engine.steps.fetch_ddg import FetchDdgStep
     from anpe.engine.steps.summarize_ddg import SummarizeDdgStep
 
-    steps = [FetchDdgStep(), SummarizeDdgStep(), EvalStep()]
+    steps = [BootstrapStep(), FetchDdgStep(), SummarizeDdgStep(), EvalStep()]
     return {s.name: s for s in steps}
 
 
-_KNOWN_STEPS = ["fetch_ddg", "summarize_ddg", "eval"]
+_KNOWN_STEPS = ["bootstrap", "fetch_ddg", "summarize_ddg", "eval"]
 
 
 @cli.command("scan")
@@ -567,11 +568,13 @@ _KNOWN_STEPS = ["fetch_ddg", "summarize_ddg", "eval"]
 @click.option("--min-score", default=None, help="(eval) minimum score: discard|enrich|maybe|good")
 @click.option("--exclude-reaction", default=None, help="(eval) skip nodes with this reaction")
 @click.option("--naf-prefix", default=None, help="(summarize_ddg) filter by NAF code prefix")
+@click.option("--refresh", is_flag=True, default=False, help="(bootstrap) invalidate API cache and re-fetch.")
 def cmd_scan(
     step: str,
     min_score: str | None,
     exclude_reaction: str | None,
     naf_prefix: str | None,
+    refresh: bool,
 ) -> None:
     """List candidates for STEP as JSON, one per line.
 
@@ -580,6 +583,8 @@ def cmd_scan(
     anpe scan eval --min-score=maybe
     anpe scan summarize_ddg --naf-prefix=62
     anpe scan fetch_ddg
+    anpe scan bootstrap
+    anpe scan bootstrap --refresh
     """
     steps = _make_steps()
     step_obj = steps[step]
@@ -591,6 +596,8 @@ def cmd_scan(
         flags["exclude_reaction"] = exclude_reaction
     if naf_prefix is not None:
         flags["naf_prefix"] = naf_prefix
+    if refresh:
+        flags["refresh"] = refresh
 
     from anpe.engine.steps.base import Candidate
     candidates: list[Candidate] = step_obj.scan(**flags)  # type: ignore[union-attr]
@@ -615,11 +622,13 @@ def cmd_put() -> None:
     anpe scan eval | anpe put
     """
     from anpe.engine.queue import Queue
+    from anpe.engine.steps.bootstrap import BootstrapStep
     from anpe.engine.steps.eval import EvalStep
     from anpe.engine.steps.fetch_ddg import FetchDdgStep
     from anpe.engine.steps.summarize_ddg import SummarizeDdgStep
 
     _versions = {
+        BootstrapStep.name: BootstrapStep.version,
         FetchDdgStep.name: FetchDdgStep.version,
         SummarizeDdgStep.name: SummarizeDdgStep.version,
         EvalStep.name: EvalStep.version,
@@ -673,12 +682,13 @@ def cmd_run(step_name: str | None, budget: int | None) -> None:
     """
     from anpe.engine.queue import Queue
     from anpe.engine.runner import Runner
+    from anpe.engine.steps.bootstrap import BootstrapStep
     from anpe.engine.steps.eval import EvalStep
     from anpe.engine.steps.fetch_ddg import FetchDdgStep
     from anpe.engine.steps.summarize_ddg import SummarizeDdgStep
     from anpe.engine.vault import Vault
 
-    steps = [FetchDdgStep(), SummarizeDdgStep(), EvalStep()]
+    steps = [BootstrapStep(), FetchDdgStep(), SummarizeDdgStep(), EvalStep()]
     queue = Queue()
     vault = Vault()
     runner = Runner(steps, queue, vault)
@@ -703,23 +713,28 @@ def cmd_run(step_name: str | None, budget: int | None) -> None:
 @click.option("--min-score", default=None, help="(eval) minimum score")
 @click.option("--exclude-reaction", default=None, help="(eval) skip nodes with this reaction")
 @click.option("--naf-prefix", default=None, help="(summarize_ddg) filter by NAF code prefix")
+@click.option("--refresh", is_flag=True, default=False, help="(bootstrap) invalidate API cache and re-fetch.")
 @click.option("--budget", default=None, type=int, help="Maximum items to run.")
 def cmd_step(
     step_name: str,
     min_score: str | None,
     exclude_reaction: str | None,
     naf_prefix: str | None,
+    refresh: bool,
     budget: int | None,
 ) -> None:
     """Scan + put + run for one step in one command.
 
     \b
+    anpe step bootstrap
+    anpe step bootstrap --refresh
     anpe step eval
     anpe step eval --min-score=maybe --budget=10
     anpe step summarize_ddg --naf-prefix=62
     """
     from anpe.engine.queue import Queue
     from anpe.engine.runner import Runner
+    from anpe.engine.steps.bootstrap import BootstrapStep
     from anpe.engine.steps.eval import EvalStep
     from anpe.engine.steps.fetch_ddg import FetchDdgStep
     from anpe.engine.steps.summarize_ddg import SummarizeDdgStep
@@ -735,6 +750,8 @@ def cmd_step(
         flags["exclude_reaction"] = exclude_reaction
     if naf_prefix is not None:
         flags["naf_prefix"] = naf_prefix
+    if refresh:
+        flags["refresh"] = refresh
 
     candidates = step_obj.scan(**flags)  # type: ignore[union-attr]
 
@@ -745,6 +762,7 @@ def cmd_step(
     console.print(f" [dim]{len(candidates)} candidate(s) found.[/]")
 
     _versions = {
+        BootstrapStep.name: BootstrapStep.version,
         FetchDdgStep.name: FetchDdgStep.version,
         SummarizeDdgStep.name: SummarizeDdgStep.version,
         EvalStep.name: EvalStep.version,
@@ -767,7 +785,7 @@ def cmd_step(
         return
 
     vault = Vault()
-    steps = [FetchDdgStep(), SummarizeDdgStep(), EvalStep()]
+    steps = [BootstrapStep(), FetchDdgStep(), SummarizeDdgStep(), EvalStep()]
     runner = Runner(steps, queue, vault)
 
     _STATUS_STYLE = {"done": "green", "error_retry": "yellow", "error_abort": "red"}
@@ -854,49 +872,6 @@ Update the profile to reflect what these reactions reveal about what the user is
     else:
         console.print(" [yellow]Live profile update not yet implemented. Use --dry-run to print the prompt.[/]")
 
-
-# ---------------------------------------------------------------------------
-# Bootstrap group
-# ---------------------------------------------------------------------------
-
-
-@cli.group("bootstrap")
-def bootstrap_group() -> None:
-    """Generate company listing from SIRENE API."""
-
-
-@bootstrap_group.command("run")
-@click.option("--refresh", is_flag=True, default=False, help="Invalidate cache and re-fetch all pairs.")
-def bootstrap_run(refresh: bool) -> None:
-    """Build user_data/company_listing.csv from user_profile.yaml.
-
-    Reads user_data/user_profile.yaml from the project root.
-    Writes output to user_data/company_listing.csv.
-    Re-running is safe -- cache is reused unless --refresh is passed.
-    """
-    import logging
-
-    from pathlib import Path
-
-    from anpe.bootstrap.pipeline import run as bootstrap_pipeline
-    from anpe.config import USER_DATA_DIR
-
-    logging.basicConfig(level=logging.INFO, format="%(message)s")
-
-    profile_path = USER_DATA_DIR / "user_profile.yaml"
-    output_path = USER_DATA_DIR / "company_listing.csv"
-    cache_dir = Path("cache_data") / "bootstrap_cache"
-
-    if not profile_path.exists():
-        raise click.ClickException(f"user_profile.yaml not found at {profile_path}")
-
-    console.print(f" [dim]profile[/] {profile_path}")
-    console.print(f" [dim]output[/]  {output_path}")
-    if refresh:
-        console.print(" [yellow]--refresh: cache will be invalidated[/]")
-
-    count = bootstrap_pipeline(profile_path, output_path, cache_dir, refresh=refresh)
-    console.print(f" [bold green]ok[/] {count} companies written to {output_path}")
 
 
 def run() -> None:

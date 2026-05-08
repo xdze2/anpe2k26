@@ -1,7 +1,7 @@
 """Paginated search against recherche-entreprises API with per-page file cache.
 
 Each (departement, naf_code) pair is cached as one JSON file per page under
-user_data/bootstrap_cache/. Files are written immediately after each request,
+cache_data/bootstrap_cache/. Files are written immediately after each request,
 so a killed run resumes from the last completed page.
 
 Cache files:
@@ -22,6 +22,8 @@ import time
 from pathlib import Path
 
 import httpx
+
+_CACHE_DIR = Path("cache_data") / "bootstrap_cache"
 
 _SEARCH_URL = "https://recherche-entreprises.api.gouv.fr/search"
 _PER_PAGE = 25
@@ -61,15 +63,15 @@ def fetch_pair(
     departement: str,
     naf_code: str,
     etat: str,
-    cache_dir: Path,
     refresh: bool = False,
 ) -> list[dict]:
     """Return raw API results for (departement, naf_code).
 
-    Pages are cached individually as they arrive. If a previous run was
-    interrupted, fetching resumes from the first missing page.
+    Pages are cached individually under _CACHE_DIR as they arrive. If a
+    previous run was interrupted, fetching resumes from the first missing page.
     Pass refresh=True to delete all cached pages and re-fetch from scratch.
     """
+    cache_dir = _CACHE_DIR
     slug = _pair_slug(departement, naf_code)
     done_file = _done_path(cache_dir, slug)
 

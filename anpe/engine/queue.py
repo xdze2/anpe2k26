@@ -78,23 +78,43 @@ class Queue:
                 )
         return uid
 
-    def claim(self, step: str, worker_id: str) -> Item | None:
-        """Atomically claim one pending item for step. Returns None if queue is empty."""
+    def claim(self, step: str, worker_id: str, skip_uids: set[str] | None = None) -> Item | None:
+        """Atomically claim one pending item for step. Returns None if nothing claimable.
+
+        skip_uids: UIDs to exclude — used by the runner to avoid re-claiming items
+        that already failed with error_retry in this session.
+        """
         with self._conn:
             # Find a pending uid: latest event is 'put' or 'error_retry'.
             # Always read args from the original 'put' event row (error_retry has no args).
-            row = self._conn.execute(
-                """
-                SELECT e.uid, e.node_id, put_ev.args
-                FROM events e
-                JOIN events put_ev ON put_ev.uid = e.uid AND put_ev.step = e.step AND put_ev.event = 'put'
-                WHERE e.step = ?
-                  AND e.id = (SELECT MAX(id) FROM events WHERE step = ? AND uid = e.uid)
-                  AND e.event IN ('put', 'error_retry')
-                LIMIT 1
-                """,
-                (step, step),
-            ).fetchone()
+            if skip_uids:
+                placeholders = ",".join("?" * len(skip_uids))
+                row = self._conn.execute(
+                    f"""
+                    SELECT e.uid, e.node_id, put_ev.args
+                    FROM events e
+                    JOIN events put_ev ON put_ev.uid = e.uid AND put_ev.step = e.step AND put_ev.event = 'put'
+                    WHERE e.step = ?
+                      AND e.id = (SELECT MAX(id) FROM events WHERE step = ? AND uid = e.uid)
+                      AND e.event IN ('put', 'error_retry')
+                      AND e.uid NOT IN ({placeholders})
+                    LIMIT 1
+                    """,
+                    (step, step, *skip_uids),
+                ).fetchone()
+            else:
+                row = self._conn.execute(
+                    """
+                    SELECT e.uid, e.node_id, put_ev.args
+                    FROM events e
+                    JOIN events put_ev ON put_ev.uid = e.uid AND put_ev.step = e.step AND put_ev.event = 'put'
+                    WHERE e.step = ?
+                      AND e.id = (SELECT MAX(id) FROM events WHERE step = ? AND uid = e.uid)
+                      AND e.event IN ('put', 'error_retry')
+                    LIMIT 1
+                    """,
+                    (step, step),
+                ).fetchone()
             if row is None:
                 return None
             uid, node_id, args_json = row

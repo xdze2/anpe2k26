@@ -41,6 +41,9 @@ class Runner:
         self._results: list[RunResult] = []
         self._active: int = 0
         self._lock = asyncio.Lock()
+        # UIDs attempted this session — error_retry items are left in the queue
+        # for the next run, not retried immediately.
+        self._attempted: set[str] = set()
 
     async def run_until_empty(
         self,
@@ -70,16 +73,23 @@ class Runner:
                 if budget is not None and len(self._results) >= budget:
                     return
 
-            item = self._queue.claim(step_name, self._worker_id)
+            async with self._lock:
+                skip_uids = set(self._attempted)
+
+            item = self._queue.claim(step_name, self._worker_id, skip_uids=skip_uids)
             if item is None:
-                # No pending items right now. If all workers are idle, we're done.
+                # Queue empty or only items already attempted this session.
+                # If no other worker is in-flight, we're done.
                 async with self._lock:
                     if self._active == 0:
                         return
+                # Another worker is still running; wait in case a stale-claim
+                # recovery produces a new claimable item.
                 await asyncio.sleep(POLL_INTERVAL_S)
                 continue
 
             async with self._lock:
+                self._attempted.add(item.uid)
                 self._active += 1
 
             try:
