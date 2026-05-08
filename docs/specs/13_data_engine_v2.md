@@ -26,15 +26,15 @@ Three concrete problems this creates:
    parallel with rate limiting requires a scheduler that understands queues as first-class
    objects, not one that pops items inside a loop.
 
-3. **Decisions and execution are conflated.** Whether a step *can* run, whether it
-   *should* run, and *running* it are tangled together. For an exploration tool this
+3. **Decisions and execution are conflated.** Whether a step _can_ run, whether it
+   _should_ run, and _running_ it are tangled together. For an exploration tool this
    matters: even when a step is doable, the user often does not want to run it on every
    node — only the promising ones, only the ones matching some filter, only after a
    manual review.
 
 The goal of this refactor is not to add features. It is to make the existing pipeline
 easier to extend, easier to reason about, and to give the user explicit control over
-*what* runs, separately from *how* it runs.
+_what_ runs, separately from _how_ it runs.
 
 ---
 
@@ -50,26 +50,27 @@ The engine is a four-stage pipe. Each stage has a single responsibility:
 ```
 
 - **`scan`** — pure function over current state. For a given step, enumerate every
-  `(node_id, resolved_inputs)` tuple that *could* run: inputs exist, no equivalent
-  output is already on disk. No side effects. Produces *candidates*.
+  `(node_id, args)` tuple that _could_ run: inputs exist, no equivalent output is
+  already on disk. No side effects. Produces _candidates_.
 
 - **`filter`** — policy. Drop candidates by score, by tag, by manual deny-list, by
-  "user already reacted." Composable. Stateless predicates over candidate records.
+  "user already reacted." Implemented as hardcoded per-step flags on `scan`, not a
+  generic predicate language (see "Filter ergonomics" below).
 
 - **`put`** — the only writer to the queue. Inserts a fully-resolved run description.
-  Idempotent: putting the same `(step, version, inputs)` twice is a no-op.
+  Idempotent: putting the same `(step, version, args)` twice is a no-op.
 
 - **`run`** — drains the queue. Claims a pending item, executes the step's work
-  function, writes outputs to the vault, marks done. Knows nothing about why an
-  item was put there.
+  function, writes outputs to the vault and to the event log, marks done. Knows
+  nothing about why an item was put there.
 
 These stages are independently invokable. Each one is a useful command on its own:
 
 ```bash
-anpe scan eval                     # show what eval runs are doable
-anpe scan eval | anpe filter "score>=7"   # what would be scheduled
-anpe scan eval | anpe filter "score>=7" | anpe put   # actually schedule
-anpe run                           # drain the queue with rate limits
+anpe scan eval                              # all doable eval candidates
+anpe scan eval --min-score=7                # filtered (hardcoded flag)
+anpe scan eval --min-score=7 | anpe put     # actually schedule
+anpe run                                    # drain the queue with rate limits
 ```
 
 This is the abstraction. Everything below is the substrate that supports it.
@@ -82,7 +83,7 @@ exploration tool. Even when an eval is doable on every node, you do not want to 
 first-class input to scheduling, not an afterthought.
 
 Conversely, a pure work-queue model ("the producer of the previous step calls
-`put()`") makes the staleness question external: when the profile changes, *something*
+`put()`") makes the staleness question external: when the profile changes, _something_
 has to know to re-enqueue eval for every node. By making `scan` a pure function over
 the data graph, that question has a uniform answer: re-run `scan eval` and you see
 every node whose eval is now stale.
@@ -96,14 +97,46 @@ every node whose eval is now stale.
 
 Three concerns, three stages:
 
-| Concern    | Question                              | Stage          |
-|------------|---------------------------------------|----------------|
-| Capability | Are inputs present? Step applicable?  | `scan`         |
-| Intent     | Should this actually run?             | `filter`+`put` |
-| Execution  | Run it.                               | `run`          |
+| Concern    | Question                             | Stage          |
+| ---------- | ------------------------------------ | -------------- |
+| Capability | Are inputs present? Step applicable? | `scan`         |
+| Intent     | Should this actually run?            | `filter`+`put` |
+| Execution  | Run it.                              | `run`          |
 
 The spec's earlier draft conflated capability with intent. This decomposition is
 the central design move.
+
+---
+
+## Args and outputs — the data shape
+
+Every step is a function `args → outputs`, where both are JSON dicts. This is the
+whole interface.
+
+```python
+@dataclass
+class Candidate:
+    step: str
+    node_id: str
+    args: dict          # everything the work function needs
+    context: dict       # signals for filtering, populated by scan
+```
+
+`args` carries everything the work function needs to run: scalar parameters
+(keywords, tool slugs), and **vault URIs as strings** (e.g. `args["raw_file"] =
+"abc123/raw/2026-05-08T1200_homepage.html"`). There is no separate "files" field —
+a URI is just a string the work function knows how to load. Convention: keys
+suffixed `_uri` are vault references.
+
+`outputs` mirrors `args`: also a JSON dict, may mix inline values and vault URIs.
+Eval can write `{"score": 7, "fit": "...", "reasoning_uri": "..."}` — the score is
+inline (cheap to read at scan time when filtering), the long reasoning lives in
+the vault. The work function decides what goes inline vs. into the vault.
+
+`context` is what makes filtering expressive: `scan` joins relevant signals
+(latest eval score, last reaction, NAF code, ...) onto each candidate so the
+filter flags have something to bite on. `context` lives only in the candidate
+stream; it is not stored in the queue.
 
 ---
 
@@ -113,52 +146,59 @@ A step is defined by:
 
 - **`name`** — `fetch`, `summarize`, `eval`, ...
 - **`version`** — bumped when logic changes; participates in content addressing.
-- **`scan()`** — enumerates doable candidates. Step-specific (see below).
-- **`work(item, vault)`** — the work function. Loads inputs, computes, returns output.
+- **`scan(**filter_flags)`** — enumerates doable candidates, with hardcoded
+  filtering flags appropriate to this step.
+- **`work(args, vault) -> outputs`** — the work function. Loads inputs from `args`,
+  computes, returns an outputs dict.
 - **`rate_limiter`** — shared per external resource (OpenRouter, DDG, SIREN).
 
-Steps never call each other. A step writes its output to the vault and marks the run
-done. Whether downstream work becomes doable is something the *next* `scan` discovers.
+Steps never call each other. A step writes its outputs to the vault and to the
+event log, then stops. Whether downstream work becomes doable is something the
+_next_ `scan` discovers.
 
 ### `scan` is per-step
 
 Each step knows what its inputs look like and what counts as "already done":
 
-- **`scan summarize`** — for each `(node_id, raw_file)` where no `sum_*.json` exists
-  for that raw_file at the current summarizer version → emit a candidate.
+- **`scan summarize`** — for each `(node_id, raw_uri)` where no `sum_*.json`
+  exists for that raw file at the current summarizer version → emit a candidate.
 
-- **`scan eval`** — for each `(node_id, latest_sum, active_profile)` where no
-  `eval_*.json` exists for that `(sum, profile)` pair → emit a candidate.
+- **`scan eval`** — for each `(node_id, summary_uri, profile_uri)` where no
+  `eval_*.json` exists for that `(summary, profile)` pair → emit a candidate.
 
 - **`scan fetch`** — different shape: inputs are URLs that do not preexist as
-  artifacts. Source is pending targets emitted by summarize (`new_targets`) or by
-  seed. Reads from a `targets/` log; emits one candidate per pending target not yet
-  fetched.
+  artifacts. Source is pending targets emitted by summarize (`new_targets`) or
+  by seed. Reads from a `targets/` log; emits one candidate per pending target
+  not yet fetched.
 
-Fetch is naturally **push-sourced** (new URLs appear from outside the data graph).
-Summarize and eval are naturally **pull-sourced** (derived from existing artifacts).
-The `scan | filter | put | run` interface accommodates both: `scan` for fetch
-enumerates pending URLs; `scan` for summarize enumerates raw files lacking summaries.
-Same downstream interface, different sources.
+Fetch is naturally **push-sourced** (new URLs appear from outside the data
+graph). Summarize and eval are naturally **pull-sourced** (derived from existing
+artifacts). The `scan | filter | put | run` interface accommodates both.
 
-### Candidate records
+`scan` also surfaces **stale claims**: any item claimed more than 5 minutes ago
+without a `done` or `error_*` event is reported as a candidate for retry. See
+"Worker crash recovery" below.
 
-`scan` emits rich records, not just identifiers, so `filter` has something to bite on:
+### Filter ergonomics
 
-```python
-@dataclass
-class Candidate:
-    step: str
-    node_id: str
-    args: dict          # scalar params (tool slug, target URL, ...)
-    files: list[str]    # vault URIs of input artifacts
-    # context for filtering — populated by scan, not by the step
-    context: dict       # e.g. {"latest_score": 7, "reaction": "maybe", "naf": "62.01Z"}
+Filtering is **hardcoded per step**, exposed as named flags on `scan`. No generic
+predicate language, no DSL, no `eval()`-on-user-string footguns.
+
+```bash
+anpe scan eval --min-score=N --exclude-reaction=discard
+anpe scan summarize --naf-prefix=62
+anpe scan fetch --tool=duckduckgo
 ```
 
-`context` is what makes filters expressive: `filter "score>=7 and reaction!='discard'"`
-works because `scan` already joined the relevant signals. The set of context fields is
-step-specific and lives next to the step's `scan` implementation.
+Each step declares the flags that make sense for its candidate context. If the
+same flag combination is used repeatedly, it becomes a shell alias. If a flag
+shape recurs across multiple steps, it becomes shared infrastructure. We add a
+generic predicate layer only if the hardcoded flags actually start to chafe — not
+preemptively.
+
+The line we will not cross: filter does not maintain its own state. Stateful
+"skip this node forever" lives in `NodeDir`, exposed through a context field
+that flags can read.
 
 ---
 
@@ -171,12 +211,17 @@ class Vault:
 ```
 
 The URI scheme decouples the engine from the storage backend. The current
-implementation uses the filesystem (`node_id/raw_data/filename`). A future
-implementation could use S3, MongoDB, or a local SQLite blob store — the steps don't
-change.
+implementation uses the filesystem. A future implementation could use S3,
+MongoDB, or a local SQLite blob store — the steps don't change.
 
-URI convention: `{node_id}/{stage}/{filename}` — stable, human-readable, and trivially
-mapped to a filesystem path or a database key.
+URI convention: `{node_id}/{stage}/{timestamp}_{slug}.{ext}` — stable,
+human-readable, trivially mapped to a filesystem path or a database key.
+
+**Vault is write-once.** Every artifact path includes a creation timestamp;
+files are never overwritten or modified after creation. This invariant is what
+makes the rest of the design simple: the URI string _is_ the content identifier.
+No need to re-hash file contents to detect changes — if the URI is the same,
+the bytes are the same.
 
 ---
 
@@ -189,63 +234,81 @@ concern that supports them.
 ### Item identity is content-addressed
 
 ```python
-uid = hash(step, version, args, hash_of_each_input_file)
+uid = hash(step, version, args)
 ```
 
-This makes `put` idempotent: putting the same logical run twice produces the same
-uid, and the second insert is a no-op. It also kills a class of bugs: re-running
-`scan | put` after a crash does not duplicate work; loop-backs (summarize emitting
-new fetch targets that resolve to URLs already fetched) collapse cleanly.
+Because the vault is write-once, hashing the args (which contain URI strings,
+not file contents) is enough — the URI uniquely identifies the bytes.
 
-Crucially, this gives free staleness detection. When the profile file changes, its
-hash changes, so every eval candidate gets a new uid — `scan eval` naturally surfaces
-every node whose eval is stale, without any external "invalidate" trigger.
+This makes `put` idempotent: putting the same logical run twice produces the
+same uid, and the second insert is a no-op. It also kills a class of bugs:
+re-running `scan | put` after a crash does not duplicate work; loop-backs
+(summarize emitting new fetch targets that resolve to URLs already fetched)
+collapse cleanly.
+
+Crucially, this gives free staleness detection. When the profile file changes,
+its URI changes (new timestamp), so every eval candidate gets a new uid —
+`scan eval` naturally surfaces every node whose eval is now stale, with no
+external "invalidate" trigger.
 
 ### Queue interface
 
 ```python
 class Queue:
-    def put(self, candidate: Candidate) -> str: ...           # returns uid; idempotent
+    def put(self, candidate: Candidate, force: bool = False) -> str: ...
     def claim(self, step: str, worker_id: str) -> Item | None: ...
-    def mark_done(self, uid: str, output_uris: list[str]): ...
+    def mark_done(self, uid: str, outputs: dict): ...
     def mark_error(self, uid: str, reason: str, retryable: bool): ...
     def pending(self, step: str) -> list[Item]: ...
+    def stale_claims(self, step: str, older_than_s: int = 300) -> list[Item]: ...
 ```
 
-`claim()` is the critical operation: it atomically transitions an item from
-`pending` to `claimed`, preventing two workers from processing the same item.
+`put` is idempotent by default. `force=True` perturbs the uid (with a nonce) so
+the run is enqueued as a distinct item — for the "the LLM gave a bad answer,
+re-run this exact eval" case where bumping the step version would be too broad.
+
+`claim` takes a step name, not a uid: the runner is generic ("give me any
+pending item for step X"). For debug ergonomics, `anpe run --uid=...` exists as
+a separate code path.
+
+`stale_claims` returns items claimed but not finished within the timeout
+window. Used both by `scan` (to surface them as retry candidates) and by the
+runner's claim sweep (to auto-recover from worker crashes).
 
 ### Queue persistence — SQLite as an append-only event log
 
-State is derived from an append-only event log. No rows are ever updated or deleted.
-This preserves the audit trail and matches the spirit of the current JSONL format —
-just unified across nodes and steps.
+State is derived from an append-only event log. No rows are ever updated or
+deleted. This preserves the audit trail and matches the spirit of the current
+JSONL format — just unified across nodes and steps.
 
 ```sql
 CREATE TABLE events (
-    id        INTEGER PRIMARY KEY AUTOINCREMENT,  -- global ordering
-    uid       TEXT NOT NULL,    -- content-addressed item id
-    node_id   TEXT NOT NULL,
-    step      TEXT NOT NULL,    -- 'fetch' | 'summarize' | 'eval' | ...
-    event     TEXT NOT NULL,    -- 'put' | 'claimed' | 'done' | 'error_retry' | 'error_abort'
-    ts        TEXT NOT NULL,
-    args        TEXT,           -- JSON dict (put event)
-    files       TEXT,           -- JSON list of input vault URIs (put event)
-    output_uris TEXT,           -- JSON list (done event)
-    worker_id   TEXT,
-    detail      TEXT
+    id          INTEGER PRIMARY KEY AUTOINCREMENT,  -- global ordering
+    uid         TEXT NOT NULL,    -- content-addressed item id
+    node_id     TEXT NOT NULL,
+    step        TEXT NOT NULL,    -- 'fetch' | 'summarize' | 'eval' | ...
+    event       TEXT NOT NULL,    -- 'put' | 'claimed' | 'done' | 'error_retry' | 'error_abort'
+    ts          TEXT NOT NULL,
+    args        TEXT,             -- JSON dict (put event)
+    outputs     TEXT,             -- JSON dict, inline values + URIs (done event)
+    worker_id   TEXT,             -- (claimed event)
+    error       TEXT              -- error reason (error_* events)
 );
 
 CREATE INDEX idx_events_step_uid ON events (step, uid, id);
 ```
 
+Six payload columns. The mental model: a step is `args → outputs`, both JSON
+dicts, both potentially containing vault URIs as strings. Plus a worker id when
+claimed and an error reason when failed. That's it.
+
 Current state of an item = its latest event. Pending items for a step:
 
 ```sql
-SELECT uid, args, files
+SELECT uid, args
 FROM events
-WHERE step = 'fetch'
-  AND id IN (SELECT MAX(id) FROM events WHERE step = 'fetch' GROUP BY uid)
+WHERE step = ?
+  AND id IN (SELECT MAX(id) FROM events WHERE step = ? GROUP BY uid)
   AND event IN ('put', 'error_retry');
 ```
 
@@ -255,20 +318,23 @@ Per-node history (equivalent to today's `cat fetch.jsonl`):
 SELECT * FROM events WHERE node_id = ? ORDER BY id;
 ```
 
-Atomic claim is a single transaction: SELECT a pending uid, INSERT a `claimed` event.
-SQLite serializes writes, so two workers racing each execute sequentially — the
-second finds the item already claimed and backs off.
+Atomic claim is a single transaction: SELECT a pending uid, INSERT a `claimed`
+event. SQLite serializes writes, so two workers racing each execute
+sequentially — the second finds the item already claimed and backs off.
 
-The per-node JSONL files become *views* over the global log, regenerated on demand.
-The global log is the source of truth.
+The per-node JSONL files become _views_ over the global log, regenerated on
+demand. The global log is the source of truth.
 
 ---
 
 ## Runner
 
-The runner's job shrinks to: **drain the queue, respect rate limits, stop cleanly.**
+The runner's job: **drain the queue, respect rate limits, sweep stale claims,
+stop cleanly.**
 
 ```python
+CLAIM_TIMEOUT_S = 300   # 5 minutes — runs are expected to be small
+
 class Runner:
     async def run_until_empty(self):
         tasks = [
@@ -280,6 +346,7 @@ class Runner:
 
     async def _worker(self, step: Step):
         while True:
+            self._sweep_stale_claims(step)   # re-mark as error_retry
             item = await self.queue.claim(step.name, worker_id=...)
             if item is None:
                 if self._all_quiescent():
@@ -288,49 +355,62 @@ class Runner:
                 continue
             await step.rate_limiter.acquire()
             try:
-                result = await step.work(item, self.vault)
-                self.queue.mark_done(item.uid, result.output_uris)
+                outputs = await step.work(item.args, self.vault)
+                self.queue.mark_done(item.uid, outputs)
             except RetryableError as e:
                 self.queue.mark_error(item.uid, str(e), retryable=True)
             except FatalError as e:
                 self.queue.mark_error(item.uid, str(e), retryable=False)
+
+    def _sweep_stale_claims(self, step: Step):
+        for stale in self.queue.stale_claims(step.name, CLAIM_TIMEOUT_S):
+            self.queue.mark_error(stale.uid, "claim timeout", retryable=True)
 ```
 
-The runner does **not** trigger downstream work. It does not call `scan` or `put`.
-A run finishing simply marks the queue done; whether new work becomes doable is
-something the next `scan` invocation discovers. This is the rule that keeps
-intent and execution separated.
+Runs are expected to complete in well under 5 minutes (single LLM call, single
+fetch). A claim that exceeds the timeout is treated as a crashed worker and
+re-marked as `error_retry` — the next claim will pick it up. This handles
+crashes uniformly with other retryable errors.
+
+The runner does **not** trigger downstream work. It does not call `scan` or
+`put`. A run finishing simply marks the queue done; whether new work becomes
+doable is something the next `scan` invocation discovers. This is the rule that
+keeps intent and execution separated.
 
 ### Rate limiting
 
-One `RateLimiter` per external resource (OpenRouter, DDG, SIREN), shared across all
-steps that hit it. Token bucket with configurable rate and burst. This is the right
-granularity: OpenRouter's quota applies to all LLM steps combined, not per step.
+One `RateLimiter` per external resource (OpenRouter, DDG, SIREN), shared across
+all steps that hit it. Token bucket with configurable rate and burst. This is
+the right granularity: OpenRouter's quota applies to all LLM steps combined,
+not per step.
 
 ---
 
 ## How the current pipeline maps to this model
 
-The existing `fetch → summarize → eval` chain becomes three steps, each with its own
-`scan`:
+The existing `fetch → summarize → eval` chain becomes three steps, each with
+its own `scan`:
 
-- **fetch** — `scan` reads pending targets (today's open entries in `fetch.jsonl`,
-  tomorrow's `targets/` log). Work fetches the URL, writes raw data to the vault.
-- **summarize** — `scan` finds `(node, raw_file)` pairs with no summary at the
-  current summarizer version. Work calls the LLM, writes `sum_*.json`. New targets
-  emitted by the summary land in the `targets/` log, which fetch will pick up on its
-  next `scan`.
-- **eval** — `scan` finds `(node, latest_sum, active_profile)` triples with no
-  matching eval. Work calls the LLM, writes `eval_*.json`.
+- **fetch** — `scan` reads pending targets (today's open entries in
+  `fetch.jsonl`, tomorrow's `targets/` log). Work fetches the URL, writes raw
+  data to the vault.
+- **summarize** — `scan` finds `(node, raw_uri)` pairs with no summary at the
+  current summarizer version. Work calls the LLM, writes `sum_*.json`. New
+  targets emitted by the summary land in the `targets/` log, which fetch will
+  pick up on its next `scan`.
+- **eval** — `scan` finds `(node, summary_uri, profile_uri)` triples with no
+  matching eval. Work calls the LLM, writes `eval_*.json` and emits inline
+  `{score, fit}` into the event-log outputs.
 
 The current "fetch already done, retry summarize" branch (the `if` inside
 `enrich_step()`) disappears: `scan summarize` includes any raw_file lacking a
 summary, regardless of whether fetch ran in this session or last week. The
-state-machine drawing in `pipeline.py:1-13` is replaced by "look at the event log."
+state-machine drawing in `pipeline.py:1-13` is replaced by "look at the event
+log."
 
-The "loop-back" cycle (summarize → new_targets → fetch) stops being a special case.
-Summarize writes `new_targets` to the targets log; the next `scan fetch` sees them.
-No queue-to-queue plumbing.
+The "loop-back" cycle (summarize → new_targets → fetch) stops being a special
+case. Summarize writes `new_targets` to the targets log; the next `scan fetch`
+sees them. No queue-to-queue plumbing.
 
 ---
 
@@ -339,19 +419,17 @@ No queue-to-queue plumbing.
 The four core commands map to the four stages. Each is independently useful.
 
 ```bash
-anpe scan <step>                       # list candidates as JSON, one per line
-anpe filter <expr>                     # stdin → stdout, drop non-matching
-anpe put                               # stdin → queue
-anpe run [--step=...] [--budget=...]   # drain queue, optionally limited
+anpe scan <step> [--step-specific-flags]   # list candidates as JSON, one per line
+anpe put                                   # stdin → queue
+anpe run [--step=...] [--budget=...]       # drain queue, optionally limited
 
-# Convenience compositions:
-anpe schedule <step> [--filter=expr]   # = scan | filter | put
-anpe step <step> [--filter=expr]       # = scan | filter | put | run
+# Convenience composition:
+anpe step <step> [flags]                   # = scan ... | put ; then run
 ```
 
-The convenience wrappers exist because the most common user motion is
-"schedule and run eval on promising nodes." But the four-stage form is always
-available for inspection and ad-hoc work.
+Filtering happens inside `scan` via hardcoded flags; there is no separate
+`filter` command. This keeps the model simple while leaving room to introduce
+one later if the flags ever stop being enough.
 
 ---
 
@@ -360,85 +438,77 @@ available for inspection and ad-hoc work.
 ### Why not Make / DVC?
 
 Make and DVC handle staleness propagation beautifully but cannot express:
+
 - "rate-limit OpenRouter across all LLM calls"
 - "10 parallel async workers per step"
 - "filter candidates by current eval score before scheduling"
 
-The first two are why we need a queue and a runner at all. The third is why we need
-`filter` as a first-class stage. `scan` borrows the Make idea (derive candidates
-from current state); the rest of the pipe handles what Make does not.
+The first two are why we need a queue and a runner at all. The third is why we
+need filtering as a first-class concern. `scan` borrows the Make idea (derive
+candidates from current state); the rest of the pipe handles what Make does
+not.
 
 ### Why not push from each step's output?
 
 The earlier draft of this spec had each step's `work()` write directly to a
 downstream queue. Three problems:
+
 - Couples each step to the topology of what comes after it.
 - Re-runs and loop-backs need ad-hoc cycle handling.
 - "Should this run?" has nowhere to live — the producer always commits.
 
-`scan` decouples discovery from production. The producer just writes its output and
-stops; discovery is a separate, idempotent, inspectable function.
+`scan` decouples discovery from production. The producer just writes its
+output and stops; discovery is a separate, idempotent, inspectable function.
 
 ### Why content-addressed uids
 
 - Idempotent `put`: re-running `scan | put` after a crash is safe.
 - Free staleness detection: changing the profile file changes every eval uid.
-- Cycle safety: summarize emitting a target URL that was already fetched produces
-  the same fetch uid; the duplicate `put` is a no-op.
-- Cache reuse: `run_hash = uid` means the vault doubles as a result cache.
+- Cycle safety: summarize emitting a target URL that was already fetched
+  produces the same fetch uid; the duplicate `put` is a no-op.
+- Cache reuse: the event log doubles as a result cache (`outputs` is right
+  there; the vault holds large artifacts).
 
-The cost is computing input hashes on every `scan`. For our scale this is negligible
-(file mtimes can be a fast pre-check).
+The cost is computing input hashes on every `scan`. Negligible — args are tiny
+JSON dicts and the vault's write-once invariant means we never re-hash file
+contents.
 
-### Filter ergonomics
+### Why hardcoded filters
 
-Plain Python predicate strings, evaluated against the candidate record:
-
-```bash
-anpe scan eval --filter "score>=7 and reaction!='discard'"
-anpe scan summarize --filter "naf.startswith('62')"
-```
-
-No DSL, no config files. If a filter is reused, write it as a shell alias or a
-small wrapper script. The line we will not cross: filter does not maintain its own
-state. Stateful "skip this node forever" lives in `NodeDir`, exposed through a
-context field that filters can read.
+A `--filter "expr"` flag invites scope creep ("can we add `or`?", "can we
+negate?", "can we reference fields the candidate doesn't expose?"). It also
+needs a safe evaluator. Hardcoded per-step flags are the simplest thing that
+works for the cases we actually have today — and if a generic predicate layer
+is ever justified, the flag definitions are the inventory of what it would
+need to support.
 
 ### Rate limiting granularity
 
-Per external resource, not per step. `OpenRouterLimiter` is shared by `summarize`
-and `eval`; `DDGLimiter` is owned by `fetch`. The runner injects the limiter into
-the step at construction time.
+Per external resource, not per step. `OpenRouterLimiter` is shared by
+`summarize` and `eval`; `DDGLimiter` is owned by `fetch`. The runner injects
+the limiter into the step at construction time.
 
 ---
 
 ## Open questions
 
-**Filter language.** Plain Python `eval()` on candidate records is the simplest
-thing. But `eval` on user-supplied strings is a footgun. Use `simpleeval` or a
-hand-rolled comparison parser? Decide before implementing.
-
 **Where does `scan eval` get the active profile?** Reading from
-`anpe.profile.active_profile_file()` at scan time is correct but means scan has a
-runtime dependency on the profile module. Alternative: pass `--profile=<path>`
-explicitly. Probably both — default to active, allow override.
+`anpe.profile.active_profile_file()` at scan time is correct but means scan
+has a runtime dependency on the profile module. Alternative: pass
+`--profile=<path>` explicitly. Probably both — default to active, allow
+override.
 
-**Worker crash recovery.** A claimed item whose worker dies stays claimed. Options:
-(a) heartbeat events, swept by the runner; (b) reclaim claimed-older-than-N-minutes
-on startup; (c) manual `anpe queue release <uid>`. Option (c) is fine for current
-scale. Revisit if we ever run unattended.
+**Quiescence with loop-backs.** `run` stops when the queue is empty _and_ no
+workers are in-flight. Loop-back works because `scan` is not run automatically
+— a new fetch becoming doable does not auto-enqueue. The user (or a wrapping
+script) re-runs `scan | put` if they want another pass. This is intentional:
+it preserves the rule that intent is explicit.
 
-**Quiescence with loop-backs.** `run` stops when the queue is empty *and* no
-workers are in-flight. Loop-back works because `scan` is not run automatically — a
-new fetch becoming doable does not auto-enqueue. The user (or a wrapping script)
-re-runs `scan | put` if they want another pass. This is intentional: it preserves
-the rule that intent is explicit.
+**Per-node JSONL views.** Today's `fetch.jsonl` is human-readable and
+grep-able. If the global log becomes the source of truth, we lose `cat
+node_xyz/fetch.jsonl`. Solution: `anpe node history <node_id>` regenerates
+the per-node view from the event log. Cheap, always current, no drift.
 
-**Migrating from JSONL.** Each line of today's `fetch.jsonl` maps to one row in
-`events`. Per-node raw files and summarize result files stay on disk unchanged —
-only the queue index moves. One-off migration script, write once, never run again.
-
-**Per-node JSONL views.** Today's `fetch.jsonl` is human-readable and grep-able. If
-the global log becomes the source of truth, we lose `cat node_xyz/fetch.jsonl`.
-Solution: `anpe node history <node_id>` regenerates the per-node view from the
-event log. Cheap, always current, no drift.
+**POC, no migration.** We are still in POC mode — no need for a JSONL
+migration script. Throw away the current `fetch.jsonl` and rebuild from
+scratch when the new engine lands.
