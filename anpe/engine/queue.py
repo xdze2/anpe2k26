@@ -13,7 +13,8 @@ from dataclasses import dataclass
 from datetime import datetime, timezone
 from pathlib import Path
 
-USER_VAULT_DIR = Path(__file__).parent.parent.parent / "user_vault"
+from anpe.engine.vault import USER_VAULT_DIR
+
 QUEUE_DB = USER_VAULT_DIR / "queue.db"
 
 _SCHEMA = """
@@ -39,7 +40,7 @@ def _now() -> str:
 
 def _content_uid(step: str, version: str, args: dict) -> str:  # type: ignore[type-arg]
     payload = json.dumps({"step": step, "version": version, "args": args}, sort_keys=True)
-    return hashlib.sha256(payload.encode()).hexdigest()[:16]
+    return hashlib.sha256(payload.encode()).hexdigest()[:32]
 
 
 @dataclass

@@ -230,15 +230,16 @@ that flags can read.
 
 ```python
 class Vault:
-    def save(self, uri: str, data: bytes) -> str: ...  # returns canonical uri
+    def store(self, node_id: str, step: str, slug: str, ext: str, data: bytes) -> str: ...  # returns uri
     def load(self, uri: str) -> bytes: ...
+    def exists(self, uri: str) -> bool: ...
 ```
 
-The URI scheme decouples the engine from the storage backend. The current
-implementation uses the filesystem. A future implementation could use S3,
-MongoDB, or a local SQLite blob store — the steps don't change.
+Callers pass metadata; the vault builds and returns the opaque URI. This keeps
+URI construction logic in one place and lets the storage backend change without
+touching step code.
 
-URI convention: `{node_id}/{stage}/{timestamp}_{slug}.{ext}` — stable,
+URI convention: `{node_id}/{step}/{timestamp}_{slug}.{ext}` — stable,
 human-readable, trivially mapped to a filesystem path or a database key.
 
 **Vault is write-once.** Every artifact path includes a creation timestamp;
