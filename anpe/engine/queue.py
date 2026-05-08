@@ -212,5 +212,13 @@ class Queue:
         ).fetchall()
         return [Item(uid=r[0], node_id=r[1], step=step, args=json.loads(r[2])) for r in rows]
 
+    def done_events(self, step: str) -> list[dict]:  # type: ignore[type-arg]
+        """Return all done events for step ordered by id, each as {uid, node_id, outputs}."""
+        rows = self._conn.execute(
+            "SELECT uid, node_id, outputs FROM events WHERE step = ? AND event = 'done' ORDER BY id",
+            (step,),
+        ).fetchall()
+        return [{"uid": r[0], "node_id": r[1], "outputs": r[2]} for r in rows]
+
     def close(self) -> None:
         self._conn.close()

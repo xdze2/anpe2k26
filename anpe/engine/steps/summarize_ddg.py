@@ -25,13 +25,12 @@ class SummarizeDdgStep:
     def scan(self, queue: Queue, _vault: Vault, **_: object) -> list[Candidate]:
         """Return one Candidate per completed fetch_ddg run not yet summarized."""
         candidates: list[Candidate] = []
-        for ev in _ddg_done_events(queue):
+        for ev in queue.done_events(_DDG_STEP):
             outputs = json.loads(ev["outputs"]) if isinstance(ev["outputs"], str) else ev["outputs"]
             raw_ddg_uri = outputs.get("raw_uri")
+            siren_uri = outputs.get("siren_uri")
             node_id = ev["node_id"]
 
-            # siren_uri comes from the fetch_ddg put args
-            siren_uri = _siren_uri_for_ddg_event(queue, ev["uid"])
             if not raw_ddg_uri or not siren_uri:
                 continue
 
@@ -78,28 +77,6 @@ class SummarizeDdgStep:
         )
         log(f"saved → {summary_uri}")
         return {"summary_uri": summary_uri, **payload}
-
-
-def _ddg_done_events(queue: Queue) -> list[dict]:  # type: ignore[type-arg]
-    """Return all fetch_ddg done events with their uid, ordered by id."""
-    rows = queue._conn.execute(
-        "SELECT e.uid, e.node_id, e.outputs "
-        "FROM events e WHERE e.step = ? AND e.event = 'done' ORDER BY e.id",
-        (_DDG_STEP,),
-    ).fetchall()
-    return [{"uid": r[0], "node_id": r[1], "outputs": r[2]} for r in rows]
-
-
-def _siren_uri_for_ddg_event(queue: Queue, ddg_uid: str) -> str | None:
-    """Return the siren_uri from the put args of a fetch_ddg item."""
-    row = queue._conn.execute(
-        "SELECT args FROM events WHERE uid = ? AND step = ? AND event = 'put' LIMIT 1",
-        (ddg_uid, _DDG_STEP),
-    ).fetchone()
-    if row is None:
-        return None
-    args = json.loads(row[0])
-    return str(args["siren_uri"]) if "siren_uri" in args else None
 
 
 def _fmt_company_profile(siren_raw: dict) -> str:  # type: ignore[type-arg]

@@ -13,7 +13,6 @@ from anpe.prospect.registry import FETCH_TOOLS
 
 _TOOL = "ddg"
 _SIREN_STEP = "fetch_siren"
-_SIREN_VERSION = "v1"
 
 
 class FetchDdgStep:
@@ -25,7 +24,7 @@ class FetchDdgStep:
     def scan(self, queue: Queue, vault: Vault, count: int = 10, **_: object) -> list[Candidate]:
         """Return one Candidate per completed fetch_siren run not yet fetched via DDG."""
         candidates: list[Candidate] = []
-        for ev in _siren_done_events(queue):
+        for ev in queue.done_events(_SIREN_STEP):
             if len(candidates) >= count:
                 break
             outputs = json.loads(ev["outputs"]) if isinstance(ev["outputs"], str) else ev["outputs"]
@@ -74,16 +73,7 @@ class FetchDdgStep:
         log(f"fetched {len(raw_data)} chars")
         uri = vault.store(node_id, self.name, node_id[:8], fetch_tool.raw_ext, raw_data.encode())
         log(f"saved → {uri}")
-        return {"raw_uri": uri, "tool": _TOOL, "target": target}
-
-
-def _siren_done_events(queue: Queue) -> list[dict]:  # type: ignore[type-arg]
-    """Return all fetch_siren done events, ordered by id."""
-    rows = queue._conn.execute(
-        "SELECT node_id, outputs FROM events WHERE step = ? AND event = 'done' ORDER BY id",
-        (_SIREN_STEP,),
-    ).fetchall()
-    return [{"node_id": r[0], "outputs": r[1]} for r in rows]
+        return {"raw_uri": uri, "tool": _TOOL, "target": target, "siren_uri": args["siren_uri"]}
 
 
 def _ddg_target(siren_raw: dict) -> str:  # type: ignore[type-arg]

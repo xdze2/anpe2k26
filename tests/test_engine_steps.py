@@ -232,7 +232,7 @@ class TestSummarizeDdgStepScan:
         ddg_args = {"node_id": node_id, "tool": "ddg", "target": "Acme entreprise informatique", "siren_uri": siren_uri}
         self.queue.put(node_id, "fetch_ddg", "v1", ddg_args)
         uid = list(self.queue.pending("fetch_ddg"))[0].uid
-        self.queue.mark_done(uid, "fetch_ddg", node_id, {"raw_uri": raw_ddg_uri, "tool": "ddg"})
+        self.queue.mark_done(uid, "fetch_ddg", node_id, {"raw_uri": raw_ddg_uri, "tool": "ddg", "siren_uri": siren_uri})
         return siren_uri, raw_ddg_uri
 
     def test_empty_when_no_fetch_ddg_done(self) -> None:
