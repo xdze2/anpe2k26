@@ -138,6 +138,19 @@ the vault. The work function decides what goes inline vs. into the vault.
 filter flags have something to bite on. `context` lives only in the candidate
 stream; it is not stored in the queue.
 
+### node_id for process-level steps
+
+Most steps are per-company: `node_id` is the company node directory name. Some
+steps are not — `bootstrap` produces a company listing from the user profile,
+with no company node to attach to. These use a sentinel string prefixed with
+`_` (e.g. `_bootstrap`). The underscore is a convention: real node ids never
+start with `_`, so there is no collision risk.
+
+This feels slightly off because `node_id` implies "a company node," but it is
+pragmatic: the queue, vault URI scheme, and history queries all work unchanged.
+The alternative — a separate nullable column or a union type — adds complexity
+for a rare case. If the number of process-level steps grows, revisit.
+
 ---
 
 ## What each step declares
