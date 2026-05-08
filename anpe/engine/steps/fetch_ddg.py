@@ -1,4 +1,4 @@
-"""fetch_ddg step — scan bootstrap listing, run DDG search."""
+"""fetch_ddg step — scan fetch_siren done events, run DDG search."""
 
 from __future__ import annotations
 
@@ -9,39 +9,37 @@ from anpe.engine.steps.base import Candidate, Log
 from anpe.engine.vault import Vault
 from anpe.prospect.errors import FetchBlockedError, FetchNotFoundError, FetchRetryableError
 from anpe.prospect.registry import FETCH_TOOLS
-from anpe.prospect.seed import node_id_for
 
 _TOOL = "ddg"
-_BOOTSTRAP_NODE = "_bootstrap"
-_BOOTSTRAP_STEP = "bootstrap"
+_SIREN_STEP = "fetch_siren"
+_SIREN_VERSION = "v1"
 
 
 class FetchDdgStep:
     name = "fetch_ddg"
     version = "v1"
-    description = "Fetch raw DDG search results for companies from the bootstrap listing or follow-up targets."
+    description = "Fetch raw DDG search results for companies sourced from completed fetch_siren runs."
 
     def scan(self, queue: Queue, vault: Vault, count: int = 10, **_: object) -> list[Candidate]:
-        """Return one Candidate per company in the latest bootstrap listing not yet fetched."""
-        listing_uri = _latest_bootstrap_listing_uri(queue)
-        if listing_uri is None:
-            return []
-
-        listing_text = vault.load(listing_uri).decode()
+        """Return one Candidate per completed fetch_siren run not yet fetched via DDG."""
         candidates: list[Candidate] = []
-        for line in listing_text.splitlines():
+        for ev in _siren_done_events(queue):
             if len(candidates) >= count:
                 break
-            line = line.strip()
-            if not line:
+            outputs = json.loads(ev["outputs"]) if isinstance(ev["outputs"], str) else ev["outputs"]
+            siren_uri = outputs.get("raw_uri")
+            if not siren_uri:
                 continue
-            row = json.loads(line)
-            node_id = node_id_for(row["nom_complet"], row["siren"])
+            node_id = ev["node_id"]
+
+            siren_raw = json.loads(vault.load(siren_uri).decode())
+            target = _ddg_target(siren_raw)
+
             args = {
                 "node_id": node_id,
                 "tool": _TOOL,
-                "target": row["nom_complet"],
-                "listing_uri": listing_uri,
+                "target": target,
+                "siren_uri": siren_uri,
             }
             if queue.is_done(self.name, self.version, args):
                 continue
@@ -49,7 +47,7 @@ class FetchDdgStep:
                 step=self.name,
                 node_id=node_id,
                 args=args,
-                context={"nom_complet": row["nom_complet"], "siren": row["siren"]},
+                context={"nom_complet": siren_raw.get("nom_complet", "")},
             ))
         return candidates
 
@@ -77,13 +75,20 @@ class FetchDdgStep:
         return {"raw_uri": uri, "tool": _TOOL, "target": target}
 
 
-def _latest_bootstrap_listing_uri(queue: Queue) -> str | None:
-    """Return the listing_uri from the most recent successfully completed bootstrap run, or None."""
-    events = queue.node_history(_BOOTSTRAP_NODE, step=_BOOTSTRAP_STEP)
-    for ev in reversed(events):
-        if ev["event"] == "done" and ev.get("outputs"):
-            outputs = json.loads(ev["outputs"]) if isinstance(ev["outputs"], str) else ev["outputs"]
-            uri = outputs.get("listing_uri")
-            if uri:
-                return str(uri)
-    return None
+def _siren_done_events(queue: Queue) -> list[dict]:  # type: ignore[type-arg]
+    """Return all fetch_siren done events, ordered by id."""
+    rows = queue._conn.execute(
+        "SELECT node_id, outputs FROM events WHERE step = ? AND event = 'done' ORDER BY id",
+        (_SIREN_STEP,),
+    ).fetchall()
+    return [{"node_id": r[0], "outputs": r[1]} for r in rows]
+
+
+def _ddg_target(siren_raw: dict) -> str:  # type: ignore[type-arg]
+    """Derive the DDG search query from siren registry data."""
+    siege = siren_raw.get("siege", {})
+    nom_legal = siren_raw.get("nom_complet", "")
+    nom_commercial = str(siege.get("nom_commercial") or nom_legal)
+    naf_section = str(siren_raw.get("section_activite_principale", ""))
+    suffix = " entreprise informatique" if naf_section == "J" else " entreprise"
+    return nom_commercial + suffix

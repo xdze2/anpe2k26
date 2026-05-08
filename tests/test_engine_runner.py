@@ -134,7 +134,6 @@ async def test_runner_empty_queue_returns_immediately(tmp_queue: Queue, tmp_vaul
 @pytest.fixture(autouse=True)
 def patch_nodes(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setattr("anpe.node_dir.NODES_DIR", tmp_path / "nodes")
-    monkeypatch.setattr("anpe.engine.steps.summarize_ddg.NODES_DIR", tmp_path / "nodes")
     monkeypatch.setattr("anpe.engine.steps.eval.NODES_DIR", tmp_path / "nodes")
     monkeypatch.setattr("anpe.engine.queue.QUEUE_DB", tmp_path / "queue.db")
     monkeypatch.setattr("anpe.engine.vault.USER_VAULT_DIR", tmp_path / "vault")
@@ -148,15 +147,24 @@ def test_scan_empty(tmp_path: Path) -> None:
 
 
 def test_scan_produces_json_lines(tmp_path: Path) -> None:
-    # Put a completed bootstrap listing into the queue and vault so
+    # Put a completed fetch_siren run into the queue and vault so
     # FetchDdgStep.scan() has something to read.
+    import json as _json
     vault = Vault(root=tmp_path / "vault")
     queue = Queue(db_path=tmp_path / "queue.db")
-    listing_jsonl = json.dumps({"nom_complet": "Acme France", "siren": "123456789"}) + "\n"
-    listing_uri = vault.store("_bootstrap", "bootstrap", "listing", "jsonl", listing_jsonl.encode())
-    queue.put("_bootstrap", "bootstrap", "v2", {"profile_hash": "abc"})
-    uid = list(queue.pending("bootstrap"))[0].uid
-    queue.mark_done(uid, "bootstrap", "_bootstrap", {"listing_uri": listing_uri, "count": 1})
+    node_id = "acme_france_123456789"
+    siren_raw = _json.dumps({
+        "nom_complet": "Acme France",
+        "siren": "123456789",
+        "activite_principale": "62.01Z",
+        "section_activite_principale": "J",
+        "siege": {"nom_commercial": "Acme France", "libelle_commune": "Paris"},
+    })
+    siren_uri = vault.store(node_id, "fetch_siren", node_id[:8], "json", siren_raw.encode())
+    siren_args = {"node_id": node_id, "tool": "siren", "target": "123456789", "listing_uri": "bootstrap/listing.jsonl"}
+    queue.put(node_id, "fetch_siren", "v1", siren_args)
+    uid = list(queue.pending("fetch_siren"))[0].uid
+    queue.mark_done(uid, "fetch_siren", node_id, {"raw_uri": siren_uri, "siren": "123456789"})
     queue.close()
 
     runner = CliRunner()
@@ -166,7 +174,7 @@ def test_scan_produces_json_lines(tmp_path: Path) -> None:
     assert len(lines) == 1
     candidate = json.loads(lines[0])
     assert candidate["step"] == "fetch_ddg"
-    assert candidate["args"]["target"] == "Acme France"
+    assert candidate["args"]["target"] == "Acme France entreprise informatique"
 
 
 # ---------------------------------------------------------------------------
