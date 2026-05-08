@@ -8,6 +8,7 @@ from pathlib import Path
 from anpe.bootstrap.pipeline import rows_to_jsonl_bytes, run as _pipeline_run
 from anpe.config import USER_DATA_DIR
 from anpe.engine.queue import Queue
+from anpe.engine.steps import api_throttles
 from anpe.engine.steps.base import Candidate, Log
 from anpe.engine.vault import Vault
 
@@ -19,6 +20,7 @@ class BootstrapStep:
     name = "bootstrap"
     version = "v2"
     description = "Hash user_profile.yaml and produce a company listing JSONL in the vault."
+    rate_gate = api_throttles.NONE
 
     def scan(self, queue: Queue, _vault: Vault, refresh: bool = False, **_: object) -> list[Candidate]:
         """Emit one candidate keyed on the profile's content hash.

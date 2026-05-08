@@ -5,6 +5,7 @@ from __future__ import annotations
 import json
 
 from anpe.engine.queue import Queue
+from anpe.engine.steps import api_throttles
 from anpe.engine.steps.base import Candidate, Log
 from anpe.engine.vault import Vault
 from anpe.prospect.errors import FetchNotFoundError, FetchRetryableError
@@ -19,6 +20,7 @@ class FetchSirenStep:
     name = "fetch_siren"
     version = "v1"
     description = "Fetch company registry data from the Recherche Entreprises API for each company in the bootstrap listing."
+    rate_gate = api_throttles.SIREN
 
     def scan(self, queue: Queue, vault: Vault, count: int = 10, **_: object) -> list[Candidate]:
         """Return one Candidate per company in the latest bootstrap listing not yet fetched."""

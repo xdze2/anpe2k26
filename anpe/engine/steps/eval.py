@@ -6,6 +6,7 @@ import json
 from pathlib import Path
 
 from anpe.engine.queue import Queue
+from anpe.engine.steps import api_throttles
 from anpe.engine.steps.base import Candidate, Log
 from anpe.engine.vault import Vault
 from anpe.node_dir import NODES_DIR, NodeDir
@@ -17,6 +18,7 @@ class EvalStep:
     name = "eval"
     version = EVAL_VERSION
     description = "Score each summarized company against the user profile and assign a fit level."
+    rate_gate = api_throttles.MISTRAL
 
     def scan(
         self,

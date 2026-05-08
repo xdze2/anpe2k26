@@ -8,6 +8,7 @@ from dataclasses import dataclass, field
 
 from anpe.engine.logger import StepLogger
 from anpe.engine.queue import Queue
+from anpe.engine.rate_gate import NoGate
 from anpe.engine.steps.base import Step
 from anpe.engine.vault import Vault
 
@@ -95,7 +96,9 @@ class Runner:
 
             log_path = self._vault.root / item.node_id / item.step / f"{item.uid[:8]}.log"
             logger = StepLogger(log_path)
+            gate = getattr(step, "rate_gate", NoGate())
             try:
+                await gate.acquire()
                 outputs = await step.work(item.args, self._vault, logger)
                 self._queue.mark_done(item.uid, step_name, item.node_id, outputs)
                 result = RunResult(

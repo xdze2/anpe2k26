@@ -167,7 +167,14 @@ A step is defined by:
   using module-level singletons for DB clients.
 - **`work(args, vault, log) -> dict`** — the work function. Loads inputs from `args`,
   computes, returns an outputs dict. `log` is a per-item sink for progress messages.
-- **`rate_limiter`** — shared per external resource (OpenRouter, DDG, SIREN).
+- **`rate_gate`** — declares which external resource this step is bound by
+  (e.g. `"mistral"`, `"ddg"`, `"siren"`, or `None`). The runner holds one
+  `RateGate` per resource name and calls `gate.acquire()` before each
+  `work()` call. A gate enforces a **minimum interval between consecutive
+  requests** to that resource — not just concurrency — because the binding
+  constraint is calls per minute, not simultaneous connections. Steps that
+  share the same external quota (e.g. `summarize_ddg` and `eval` both hit
+  Mistral) declare the same gate name and therefore share the same throttle.
 
 Steps never call each other. A step writes its outputs to the vault and to the
 event log, then stops. Whether downstream work becomes doable is something the
@@ -370,7 +377,7 @@ class Runner:
                     return
                 await asyncio.sleep(POLL_INTERVAL)
                 continue
-            await step.rate_limiter.acquire()
+            await self.gates[step.rate_gate].acquire()  # min-interval throttle
             try:
                 outputs = await step.work(item.args, self.vault)
                 self.queue.mark_done(item.uid, outputs)

@@ -5,6 +5,7 @@ from __future__ import annotations
 import json
 
 from anpe.engine.queue import Queue
+from anpe.engine.steps import api_throttles
 from anpe.engine.steps.base import Candidate, Log
 from anpe.engine.vault import Vault
 from anpe.prospect.registry import FETCH_TOOLS
@@ -19,6 +20,7 @@ class SummarizeDdgStep:
     name = "summarize_ddg"
     version = SUMMARIZE_VERSION
     description = "Summarize raw DDG fetch results with an LLM and extract follow-up targets."
+    rate_gate = api_throttles.MISTRAL
 
     def scan(self, queue: Queue, _vault: Vault, **_: object) -> list[Candidate]:
         """Return one Candidate per completed fetch_ddg run not yet summarized."""

@@ -5,6 +5,7 @@ from __future__ import annotations
 import json
 
 from anpe.engine.queue import Queue
+from anpe.engine.steps import api_throttles
 from anpe.engine.steps.base import Candidate, Log
 from anpe.engine.vault import Vault
 from anpe.prospect.errors import FetchBlockedError, FetchNotFoundError, FetchRetryableError
@@ -19,6 +20,7 @@ class FetchDdgStep:
     name = "fetch_ddg"
     version = "v1"
     description = "Fetch raw DDG search results for companies sourced from completed fetch_siren runs."
+    rate_gate = api_throttles.DDG
 
     def scan(self, queue: Queue, vault: Vault, count: int = 10, **_: object) -> list[Candidate]:
         """Return one Candidate per completed fetch_siren run not yet fetched via DDG."""

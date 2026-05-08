@@ -6,6 +6,7 @@ from dataclasses import dataclass, field
 from typing import Callable, Protocol
 
 from anpe.engine.queue import Queue
+from anpe.engine.rate_gate import NoGate, RateGate
 from anpe.engine.vault import Vault
 
 Log = Callable[[str], None]
@@ -23,6 +24,7 @@ class Step(Protocol):
     name: str
     version: str
     description: str
+    rate_gate: RateGate | NoGate
 
     def scan(self, queue: Queue, vault: Vault, **filter_flags: object) -> list[Candidate]: ...
 
