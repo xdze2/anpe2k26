@@ -1,11 +1,11 @@
-"""bootstrap step — scan user_profile.yaml, produce company_listing.csv in vault."""
+"""bootstrap step — scan user_profile.yaml, produce company listing JSONL in vault."""
 
 from __future__ import annotations
 
 import hashlib
 from pathlib import Path
 
-from anpe.bootstrap.pipeline import rows_to_csv_bytes, run as _pipeline_run
+from anpe.bootstrap.pipeline import rows_to_jsonl_bytes, run as _pipeline_run
 from anpe.config import USER_DATA_DIR
 from anpe.engine.steps.base import Candidate, Log
 from anpe.engine.vault import Vault
@@ -16,7 +16,7 @@ _NODE_ID = "_bootstrap"
 
 class BootstrapStep:
     name = "bootstrap"
-    version = "v1"
+    version = "v2"
 
     def scan(self, refresh: bool = False, **_: object) -> list[Candidate]:
         """Emit one candidate keyed on the profile's content hash.
@@ -47,9 +47,8 @@ class BootstrapStep:
         rows = _pipeline_run(profile_path, refresh=refresh)
         log(f"pipeline returned {len(rows)} rows")
 
-        csv_bytes = rows_to_csv_bytes(rows)
-        uri = f"{_NODE_ID}/listing/{args['profile_hash']}_company_listing.csv"
-        vault.save(uri, csv_bytes)
-        log(f"saved {len(csv_bytes)} bytes → {uri}")
+        jsonl_bytes = rows_to_jsonl_bytes(rows)
+        uri = vault.store(_NODE_ID, self.name, "listing", "jsonl", jsonl_bytes)
+        log(f"saved {len(jsonl_bytes)} bytes → {uri}")
 
         return {"listing_uri": uri, "count": len(rows)}

@@ -160,6 +160,13 @@ def run(profile_path: Path, refresh: bool = False) -> list[dict[str, Any]]:
     return rows
 
 
+def rows_to_jsonl_bytes(rows: list[dict[str, Any]]) -> bytes:
+    """Serialize rows to JSONL bytes (UTF-8), one JSON object per line."""
+    import json
+    lines = [json.dumps(row, ensure_ascii=False) for row in rows]
+    return ("\n".join(lines) + "\n").encode("utf-8")
+
+
 def rows_to_csv_bytes(rows: list[dict[str, Any]]) -> bytes:
     """Serialize rows to CSV bytes (UTF-8)."""
     buf = io.StringIO()
