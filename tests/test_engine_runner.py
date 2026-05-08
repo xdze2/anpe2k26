@@ -134,11 +134,10 @@ async def test_runner_empty_queue_returns_immediately(tmp_queue: Queue, tmp_vaul
 @pytest.fixture(autouse=True)
 def patch_nodes(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setattr("anpe.node_dir.NODES_DIR", tmp_path / "nodes")
-    monkeypatch.setattr("anpe.engine.steps.fetch_ddg.NODES_DIR", tmp_path / "nodes")
-    monkeypatch.setattr("anpe.engine.steps.fetch_ddg.USER_VAULT_DIR", tmp_path / "vault")
     monkeypatch.setattr("anpe.engine.steps.summarize_ddg.NODES_DIR", tmp_path / "nodes")
     monkeypatch.setattr("anpe.engine.steps.eval.NODES_DIR", tmp_path / "nodes")
     monkeypatch.setattr("anpe.engine.queue.QUEUE_DB", tmp_path / "queue.db")
+    monkeypatch.setattr("anpe.engine.vault.USER_VAULT_DIR", tmp_path / "vault")
 
 
 def test_scan_empty(tmp_path: Path) -> None:
@@ -149,14 +148,16 @@ def test_scan_empty(tmp_path: Path) -> None:
 
 
 def test_scan_produces_json_lines(tmp_path: Path) -> None:
-    nodes_dir = tmp_path / "nodes"
-    node_path = nodes_dir / "acme"
-    node_path.mkdir(parents=True)
-    fetch_file = node_path / "fetch.jsonl"
-    fetch_file.write_text(
-        json.dumps({"uid": "abc1", "event": "put", "tool": "ddg", "target": "Acme France"}) + "\n",
-        encoding="utf-8",
-    )
+    # Put a completed bootstrap listing into the queue and vault so
+    # FetchDdgStep.scan() has something to read.
+    vault = Vault(root=tmp_path / "vault")
+    queue = Queue(db_path=tmp_path / "queue.db")
+    listing_jsonl = json.dumps({"nom_complet": "Acme France", "siren": "123456789"}) + "\n"
+    listing_uri = vault.store("_bootstrap", "bootstrap", "listing", "jsonl", listing_jsonl.encode())
+    queue.put("_bootstrap", "bootstrap", "v2", {"profile_hash": "abc"})
+    uid = list(queue.pending("bootstrap"))[0].uid
+    queue.mark_done(uid, "bootstrap", "_bootstrap", {"listing_uri": listing_uri, "count": 1})
+    queue.close()
 
     runner = CliRunner()
     result = runner.invoke(cli, ["scan", "fetch_ddg"])
@@ -165,7 +166,6 @@ def test_scan_produces_json_lines(tmp_path: Path) -> None:
     assert len(lines) == 1
     candidate = json.loads(lines[0])
     assert candidate["step"] == "fetch_ddg"
-    assert candidate["node_id"] == "acme"
     assert candidate["args"]["target"] == "Acme France"
 
 

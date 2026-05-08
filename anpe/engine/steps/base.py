@@ -24,6 +24,6 @@ class Step(Protocol):
     version: str
     description: str
 
-    def scan(self, queue: Queue, **filter_flags: object) -> list[Candidate]: ...
+    def scan(self, queue: Queue, vault: Vault, **filter_flags: object) -> list[Candidate]: ...
 
     async def work(self, args: dict, vault: Vault, log: Log) -> dict: ...  # type: ignore[type-arg]

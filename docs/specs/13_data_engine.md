@@ -159,10 +159,14 @@ A step is defined by:
 
 - **`name`** — `fetch`, `summarize`, `eval`, ...
 - **`version`** — bumped when logic changes; participates in content addressing.
-- **`scan(**filter_flags)`** — enumerates doable candidates, with hardcoded
-  filtering flags appropriate to this step.
-- **`work(args, vault) -> outputs`** — the work function. Loads inputs from `args`,
-  computes, returns an outputs dict.
+- **`scan(queue, vault, **filter_flags) -> list[Candidate]`** — enumerates doable
+  candidates. `queue` and `vault` are the two environment services: `queue` for
+  reading event history (e.g. skip items already done), `vault` for reading
+  existing artifacts (e.g. the bootstrap listing). Both are passed explicitly so
+  the caller controls which database connections are open — same rationale as not
+  using module-level singletons for DB clients.
+- **`work(args, vault, log) -> dict`** — the work function. Loads inputs from `args`,
+  computes, returns an outputs dict. `log` is a per-item sink for progress messages.
 - **`rate_limiter`** — shared per external resource (OpenRouter, DDG, SIREN).
 
 Steps never call each other. A step writes its outputs to the vault and to the

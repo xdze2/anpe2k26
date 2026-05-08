@@ -22,7 +22,7 @@ def _ts() -> str:
 
 class Vault:
     def __init__(self, root: Path | None = None) -> None:
-        self.root = root or USER_VAULT_DIR
+        self.root = root if root is not None else USER_VAULT_DIR
 
     def store(self, node_id: str, step: str, slug: str, ext: str, data: bytes) -> str:
         """Write data and return its opaque URI: {node_id}/{step}/{ts}_{slug}.{ext}."""

@@ -21,6 +21,7 @@ class EvalStep:
     def scan(
         self,
         queue: Queue,
+        _vault: Vault,
         *,
         min_score: str | None = None,
         exclude_reaction: str | None = None,

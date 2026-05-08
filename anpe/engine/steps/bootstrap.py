@@ -20,7 +20,7 @@ class BootstrapStep:
     version = "v2"
     description = "Hash user_profile.yaml and produce a company listing JSONL in the vault."
 
-    def scan(self, queue: Queue, refresh: bool = False, **_: object) -> list[Candidate]:
+    def scan(self, queue: Queue, _vault: Vault, refresh: bool = False, **_: object) -> list[Candidate]:
         """Emit one candidate keyed on the profile's content hash.
 
         Suppressed if a done event already exists for these args, unless

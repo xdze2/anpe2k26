@@ -599,8 +599,10 @@ def cmd_scan(
 
     from anpe.engine.queue import Queue
     from anpe.engine.steps.base import Candidate
+    from anpe.engine.vault import Vault
     queue = Queue()
-    candidates: list[Candidate] = step_obj.scan(queue, **flags)
+    vault = Vault()
+    candidates: list[Candidate] = step_obj.scan(queue, vault, **flags)
     queue.close()
 
     for c in candidates:
@@ -734,7 +736,8 @@ def cmd_step(
         flags["refresh"] = refresh
 
     queue = Queue()
-    candidates = step_obj.scan(queue, **flags)
+    vault = Vault()
+    candidates = step_obj.scan(queue, vault, **flags)
 
     if not candidates:
         console.print(" [dim]No candidates.[/]")
@@ -759,7 +762,6 @@ def cmd_step(
         queue.close()
         return
 
-    vault = Vault()
     runner = Runner(list(_STEPS.values()), queue, vault)
 
     _STATUS_STYLE = {"done": "green", "error_retry": "yellow", "error_abort": "red"}

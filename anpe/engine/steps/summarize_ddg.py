@@ -20,7 +20,7 @@ class SummarizeDdgStep:
     version = SUMMARIZE_VERSION
     description = "Summarize raw DDG fetch results with an LLM and extract follow-up targets."
 
-    def scan(self, queue: Queue, *, naf_prefix: str | None = None, **_: object) -> list[Candidate]:
+    def scan(self, queue: Queue, _vault: Vault, *, naf_prefix: str | None = None, **_: object) -> list[Candidate]:
         """Return one Candidate per (node, raw_uri) DDG pair with no matching summary.
 
         filter_flags:
