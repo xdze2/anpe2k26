@@ -512,3 +512,62 @@ the per-node view from the event log. Cheap, always current, no drift.
 **POC, no migration.** We are still in POC mode — no need for a JSONL
 migration script. Throw away the current `fetch.jsonl` and rebuild from
 scratch when the new engine lands.
+
+---
+
+## Implementation path
+
+Four independent chunks, bottom-up. Chunks 1–3 add new code without touching
+`pipeline.py` — the existing pipeline keeps working throughout. Chunk 4 is
+where it gets replaced.
+
+**Storage root:** `user_vault/` — a new top-level directory alongside
+`user_data/`. The two systems are fully separated until the migration is done.
+
+### Chunk 1 — `Vault`
+
+`anpe/engine/vault.py`. Write-once artifact store: `save(uri, data) -> str`,
+`load(uri) -> bytes`. URI convention `{node_id}/{stage}/{ts}_{slug}.{ext}`
+maps directly to a path under `user_vault/`. No dependencies.
+
+Tests: save/load round-trip, write-once enforcement (overwrite raises), URI
+format is stable.
+
+### Chunk 2 — `Queue`
+
+`anpe/engine/queue.py`. The six-method interface over a single SQLite file
+(`user_vault/queue.db`). Append-only `events` table. `put` is idempotent via
+`uid = hash(step, version, args)`. `claim` is a single write transaction.
+
+Tests: put idempotency, claim atomicity (two concurrent claims, only one
+wins), mark_done/mark_error round-trip, pending query, stale_claims.
+
+### Chunk 3 — `Step` definitions (scan + work)
+
+`anpe/engine/steps/`. A `Step` dataclass (`name`, `version`,
+`scan(**flags) -> list[Candidate]`, `work(args, vault) -> outputs`). Port the
+three existing steps as concrete implementations:
+
+- `SummarizeStep.scan()` — walks node dirs, finds `(node, raw_uri)` pairs
+  with no matching summary at the current version. Replaces the equivalent
+  logic inside `enrich_step()`.
+- `EvalStep.scan()` — finds `(node, sum_uri, profile_uri)` triples with no
+  matching eval.
+- `FetchStep.scan()` — reads pending targets from the targets log.
+
+`work()` bodies delegate to the existing `tool.fetch()`, `tool.summarize()`,
+and `eval.run()` — no rewrite of the LLM logic.
+
+Tests: `scan()` returns the right candidates given a fixture node directory.
+`work()` tested with a fake Vault.
+
+### Chunk 4 — `Runner` + CLI wiring
+
+`anpe/engine/runner.py`. Async worker loop: `run_until_empty`, per-step
+workers, stale-claim sweep, rate limiters injected at construction. Then wire
+`anpe scan`, `anpe put`, `anpe run` as Click subcommands replacing the old
+`anpe enrich` path.
+
+Tests: runner drains a pre-populated queue, stale claim is recovered,
+`anpe scan eval --min-score=7` filters correctly. Integration test: `scan |
+put | run` against a fixture, verify the event log.
