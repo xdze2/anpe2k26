@@ -6,6 +6,7 @@ import asyncio
 import uuid
 from dataclasses import dataclass, field
 
+from anpe.engine.logger import StepLogger
 from anpe.engine.queue import Queue
 from anpe.engine.steps.base import Step
 from anpe.engine.vault import Vault
@@ -92,8 +93,10 @@ class Runner:
                 self._attempted.add(item.uid)
                 self._active += 1
 
+            log_path = self._vault.root / item.node_id / item.step / f"{item.uid[:8]}.log"
+            logger = StepLogger(log_path)
             try:
-                outputs = await step.work(item.args, self._vault)
+                outputs = await step.work(item.args, self._vault, logger)
                 self._queue.mark_done(item.uid, step_name, item.node_id, outputs)
                 result = RunResult(
                     uid=item.uid, node_id=item.node_id, step=step_name,
@@ -112,6 +115,7 @@ class Runner:
                     status="error_abort", error=str(e),
                 )
             finally:
+                logger.close()
                 async with self._lock:
                     self._active -= 1
 

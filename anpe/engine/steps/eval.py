@@ -5,7 +5,7 @@ from __future__ import annotations
 import json
 from pathlib import Path
 
-from anpe.engine.steps.base import Candidate
+from anpe.engine.steps.base import Candidate, Log
 from anpe.engine.vault import Vault
 from anpe.node_dir import NODES_DIR, NodeDir
 from anpe.profile import active_profile_file
@@ -85,9 +85,11 @@ class EvalStep:
 
         return candidates
 
-    async def work(self, args: dict, vault: Vault) -> dict:  # type: ignore[type-arg]
+    async def work(self, args: dict, vault: Vault, log: Log) -> dict:  # type: ignore[type-arg]
         sum_uri = args["sum_uri"]
         profile_uri = args["profile_uri"]
+
+        log(f"sum_uri={sum_uri}  profile_uri={profile_uri}")
 
         # sum_uri is a relative path like "{node_id}/summarize/{file}"
         # The file lives in user_data/nodes/ (existing system), not the vault.
@@ -97,8 +99,10 @@ class EvalStep:
         summary = sum_data.get("summary", "")
 
         profile_text = Path(profile_uri).read_text(encoding="utf-8")
+        log(f"calling llm_eval  summary_len={len(summary)}  profile_len={len(profile_text)}")
 
         result = await llm_eval(summary, profile_text)
+        log(f"eval done  score={result.score}  uncertainty={result.uncertainty}")
         return {
             "score": result.score,
             "fit": result.fit,

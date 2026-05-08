@@ -5,7 +5,7 @@ from __future__ import annotations
 import json
 import pathlib
 
-from anpe.engine.steps.base import Candidate
+from anpe.engine.steps.base import Candidate, Log
 from anpe.engine.vault import Vault
 from anpe.node_dir import NODES_DIR, NodeDir
 from anpe.prospect.registry import FETCH_TOOLS
@@ -87,17 +87,20 @@ class SummarizeDdgStep:
 
         return candidates
 
-    async def work(self, args: dict, vault: Vault) -> dict:  # type: ignore[type-arg]
+    async def work(self, args: dict, vault: Vault, log: Log) -> dict:  # type: ignore[type-arg]
         node_id = args["node_id"]
         raw_uri = args["raw_uri"]
 
+        log(f"node={node_id}  raw_uri={raw_uri}")
         fetch_tool = FETCH_TOOLS[_TOOL]
         raw_data = vault.load(raw_uri).decode()
+        log(f"loaded {len(raw_data)} chars from vault")
         node = NodeDir(node_id)
         previous_summary = node.get_latest_summary()
         company_profile = _fmt_company_profile(node.get_siren_meta())
 
         result = await fetch_tool.summarize(raw_data, previous_summary, company_profile)
+        log(f"summarize done  status={result.status}  model={result.model}  new_targets={len(result.new_targets)}")
         return {
             "status": result.status,
             "summary": result.summary,

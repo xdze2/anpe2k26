@@ -7,7 +7,7 @@ from pathlib import Path
 
 from anpe.bootstrap.pipeline import rows_to_csv_bytes, run as _pipeline_run
 from anpe.config import USER_DATA_DIR
-from anpe.engine.steps.base import Candidate
+from anpe.engine.steps.base import Candidate, Log
 from anpe.engine.vault import Vault
 
 _PROFILE_PATH = USER_DATA_DIR / "user_profile.yaml"
@@ -39,14 +39,17 @@ class BootstrapStep:
             )
         ]
 
-    async def work(self, args: dict, vault: Vault) -> dict:  # type: ignore[type-arg]
+    async def work(self, args: dict, vault: Vault, log: Log) -> dict:  # type: ignore[type-arg]
         profile_path = Path(args["profile_path"])
         refresh = bool(args.get("refresh", False))
 
+        log(f"profile_hash={args['profile_hash']}  refresh={refresh}")
         rows = _pipeline_run(profile_path, refresh=refresh)
-        csv_bytes = rows_to_csv_bytes(rows)
+        log(f"pipeline returned {len(rows)} rows")
 
+        csv_bytes = rows_to_csv_bytes(rows)
         uri = f"{_NODE_ID}/listing/{args['profile_hash']}_company_listing.csv"
         vault.save(uri, csv_bytes)
+        log(f"saved {len(csv_bytes)} bytes → {uri}")
 
         return {"listing_uri": uri, "count": len(rows)}

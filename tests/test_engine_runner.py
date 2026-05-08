@@ -26,7 +26,7 @@ class _OkStep:
     def scan(self, **_: object) -> list[Candidate]:
         return []
 
-    async def work(self, args: dict, vault: Vault) -> dict:  # type: ignore[type-arg]
+    async def work(self, args: dict, vault: Vault, log) -> dict:  # type: ignore[type-arg]
         return {"result": args.get("value", "done")}
 
 
@@ -37,7 +37,7 @@ class _ErrorStep:
     def scan(self, **_: object) -> list[Candidate]:
         return []
 
-    async def work(self, args: dict, vault: Vault) -> dict:  # type: ignore[type-arg]
+    async def work(self, args: dict, vault: Vault, log) -> dict:  # type: ignore[type-arg]
         raise RuntimeError("retryable failure")
 
 
@@ -48,7 +48,7 @@ class _FatalStep:
     def scan(self, **_: object) -> list[Candidate]:
         return []
 
-    async def work(self, args: dict, vault: Vault) -> dict:  # type: ignore[type-arg]
+    async def work(self, args: dict, vault: Vault, log) -> dict:  # type: ignore[type-arg]
         raise ValueError("fatal failure")
 
 
