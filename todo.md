@@ -1,75 +1,126 @@
-# Engine review — follow-up todo
+# Engine — follow-up todo
 
-Tracks fixes from the review of `anpe/engine/` against `docs/specs/13_data_engine.md`.
+After the data-engine refactor and partial cleanup. New items come from the
+broad-view design review on 2026-05-09 (see dev log of that day for context).
 Tackle top-down; each item is independently shippable.
 
 ---
 
-## P1 — broken / blocks end-to-end
+## P1 — design moves with the highest leverage
 
-- [x] **`EvalStep.scan` rewrite** — currently reads old-pipeline `user_data/nodes/<id>/summarize/` and `eval_results/`. Rewire to source from `summarize_ddg` done events (vault `summary_uri`), suppress with `queue.is_done()`, drop the `NodeDir` filesystem walk. Also fix `profile_uri`: it is currently an absolute filesystem path stuffed into a key called `_uri` — either store profile in vault, or rename the key.
-  - File: [anpe/engine/steps/eval.py](anpe/engine/steps/eval.py)
-  - Tests: rewrite `TestEvalStepScan` to seed `summarize_ddg` done events, no `NODES_DIR` monkeypatch.
+- [ ] **Make the step graph explicit via `inputs_from`.**
+  Today every `scan()` opens with `for ev in queue.done_events(_UPSTREAM):` where
+  `_UPSTREAM` is a private string constant. The pipeline shape
+  `bootstrap → fetch_siren → fetch_ddg → summarize_ddg → eval → review` lives
+  nowhere as data — only by grep. Lift it to `Step.inputs_from: list[str]`
+  alongside `name`/`version`. Unblocks the auto-loop driver, `anpe steps --graph`
+  visualization, and registry-time validation that referenced upstreams exist.
+  - Files: [fetch_ddg_step.py:16](anpe/steps/fetch_ddg_step.py#L16),
+    [summarize_ddg_step.py:15](anpe/steps/summarize_ddg_step.py#L15),
+    [eval_step.py:14](anpe/steps/eval_step.py#L14),
+    [review_step.py:17](anpe/steps/review_step.py#L17),
+    [fetch_siren_step.py:15-16](anpe/steps/fetch_siren_step.py#L15-L16),
+    [engine/base.py](anpe/engine/base.py), [engine/registry.py](anpe/engine/registry.py)
 
-- [ ] **`BootstrapStep.refresh` is silently broken** — `args["refresh"]` is hardcoded to `False` at scan time, so `work()` never refreshes even if `scan(refresh=True)` is called. Drop `refresh` from `args` entirely (it is a scan-time decision); pass it via a different path or reconsider whether `force=True` on `put` is the right primitive for "re-run anyway".
-  - File: [anpe/engine/steps/bootstrap.py:34-48](anpe/engine/steps/bootstrap.py#L34-L48)
+- [ ] **Introduce `scope` as a first-class step attribute, replacing the `_bootstrap` sentinel pattern.**
+  `node_id` is doing two jobs: partition key for vault paths/queue rows, *and*
+  "what entity this work concerns." Bootstrap and (future) profile-update are
+  process-level — there is no entity. The `_bootstrap` sentinel papers over this
+  and the spec already calls it out as "slightly off."
+  Make `Step.scope: Literal["node", "global"]` (or similar) explicit. Steps
+  with `scope="global"` use a fixed key (e.g. `_global` or the step name) for
+  the partition column, and the vault routes them under a global directory.
+  Per-node steps continue to carry a real `node_id`. Removes the smell, makes
+  room for future global steps without inventing more sentinels.
+  - Files: [bootstrap_step.py:16](anpe/steps/bootstrap_step.py#L16),
+    [engine/base.py](anpe/engine/base.py), [engine/queue.py](anpe/engine/queue.py),
+    [engine/vault.py](anpe/engine/vault.py)
 
-## P2 — API hygiene (removes private-API reaches)
+- [ ] **`scan()` returns `Iterator[Candidate]` instead of `list[Candidate]`.**
+  Three steps already paper over the eager-list problem with a `count: int = 10`
+  parameter — invisible at the CLI, hardcoded, only on some steps. After
+  bootstrap with thousands of companies, scan walks all of them eagerly.
+  A generator makes scan lazy: caller pulls until budget is exhausted, the
+  `count` flag goes away, and `fetch_ddg.scan` stops loading every siren JSON
+  upfront. CLI `scan | put | run` works unchanged (one candidate per line).
+  - Files: all `*_step.py` `scan()` methods, [engine/base.py](anpe/engine/base.py),
+    [cli.py:432, 567](anpe/cli.py#L432)
 
-- [x] **Add `Queue.done_events(step)` public method.** Two steps currently reach into `queue._conn` to run the same SQL.
-  - File: [anpe/engine/queue.py](anpe/engine/queue.py)
-  - Callers to migrate: [fetch_ddg.py:80-86](anpe/engine/steps/fetch_ddg.py#L80-L86), [summarize_ddg.py:83-90](anpe/engine/steps/summarize_ddg.py#L83-L90)
+- [ ] **Per-rate-gate budgets in the runner.**
+  The current `--budget=N` on `run` counts items processed
+  ([runner.py:54](anpe/engine/runner.py#L54), [cli.py:492](anpe/cli.py#L492)) —
+  but "spend at most 50 LLM calls" maps to gate acquisitions, not items.
+  fetch_siren and fetch_ddg shouldn't count against an LLM budget; bootstrap
+  shouldn't count at all.
+  Shape: `Runner.run(budgets={"mistral": 50, "ddg": 200})`, decremented inside
+  the gate's `acquire()`. When a gate hits zero, downstream workers stop
+  claiming. Item-count budget can stay as a separate cap. This is the one
+  budget the user actually has in their head.
+  - Files: [engine/rate_gate.py](anpe/engine/rate_gate.py),
+    [engine/runner.py](anpe/engine/runner.py),
+    [steps/api_throttles.py](anpe/steps/api_throttles.py), [cli.py](anpe/cli.py)
 
-- [x] **Echo `siren_uri` through `fetch_ddg` outputs.** Lets `summarize_ddg.scan` read it from the done event like everything else; deletes `_siren_uri_for_ddg_event` and its private SQL query.
-  - Files: [fetch_ddg.py:77](anpe/engine/steps/fetch_ddg.py#L77), [summarize_ddg.py:34, 93-102](anpe/engine/steps/summarize_ddg.py#L34)
+- [ ] **`anpe loop` — drive the whole graph to quiescence.**
+  Falls out almost for free once `inputs_from` and gate-budgets exist. Walks
+  the graph topologically, scan+put each step, run, re-scan downstream
+  (newly-done items unlock new candidates), repeat until quiescent or any
+  budget hits zero. Replaces the current 5-command session ritual
+  (`step bootstrap`, `step fetch_siren`, ...).
+  Intent stays explicit — the user invokes `anpe loop`; the engine still does
+  not auto-trigger between sessions.
+  - Files: [cli.py](anpe/cli.py), new driver in [engine/](anpe/engine/)
 
-## P3 — spec/code drift
+## P2 — leftover from the prior pass
 
-- [x] **Update spec to match Vault interface.** Spec says `save(uri, data)`; code is `store(node_id, step, slug, ext, data)`. Code is better, fix the spec.
-  - Files: [13_data_engine.md:233](docs/specs/13_data_engine.md#L233)
+- [ ] **`BootstrapStep.refresh` is silently broken.**
+  `args["refresh"]` is hardcoded to `False` at scan time, so `work()` never
+  refreshes even if `scan(refresh=True)` is called. Drop `refresh` from `args`
+  entirely (it is a scan-time decision); pass it via a different path or
+  reconsider whether `force=True` on `put` is the right primitive for "re-run
+  anyway."
+  - File: [bootstrap_step.py:25-48](anpe/steps/bootstrap_step.py#L25-L48)
 
-- [ ] **Reconcile Queue interface (spec vs. code).** Spec lists `mark_done(uid, outputs)` etc.; code requires extra `step, node_id` args. Decide: either denormalise (queue looks up step/node_id from the put event) or update the spec.
-  - Files: [13_data_engine.md:280-288](docs/specs/13_data_engine.md#L280-L288), [queue.py:127-140](anpe/engine/queue.py#L127-L140)
+- [ ] **Reconcile Queue interface (spec vs. code).**
+  Spec lists `mark_done(uid, outputs)` etc.; code requires extra `step, node_id`
+  args. Decide: either denormalise (queue looks up step/node_id from the put
+  event) or update the spec.
+  - Files: [13_data_engine.md:280-288](docs/specs/13_data_engine.md#L280-L288),
+    [queue.py:127-140](anpe/engine/queue.py#L127-L140)
 
-- [ ] **`count` flag on scan is a limit, not a filter.** `count=10` default silently caps emission. Rename to `--limit`, drop the default (require explicit value), and document; or remove the cap and rely on `put` being idempotent.
-  - Files: [fetch_siren.py:25](anpe/engine/steps/fetch_siren.py#L25), [fetch_ddg.py:25](anpe/engine/steps/fetch_ddg.py#L25)
-    > scan could be a generator...
-
-- [ ] **`targets/` log loop-back: implement or delete from spec.** Spec describes summarize → new_targets → fetch loop-back; pipeline doesn't do it. Decide which.
+- [ ] **`targets/` log loop-back: implement or delete from spec.**
+  Spec describes summarize → new_targets → fetch loop-back; pipeline doesn't
+  do it. Decide which.
   - Files: [13_data_engine.md:198-204, 441-455](docs/specs/13_data_engine.md#L198-L204)
 
-## P4 — robustness
+- [ ] **Wire `prospect review` to `ReviewStep`.**
+  CLI command currently prints a placeholder ([cli.py:221-233](anpe/cli.py#L221-L233)).
 
-- [x] **Define explicit `RetryableError` / `FatalError` exceptions.** Replace the `RuntimeError` vs `Exception` heuristic in the runner with a typed contract; document on `Step.work`.
-  - Files: [runner.py:108-119](anpe/engine/runner.py#L108-L119), [base.py](anpe/engine/steps/base.py), all step `work()` bodies
+- [ ] **Retire `node_dir.py`.**
+  Legacy filesystem helpers still imported by `prospect list/status/show/map`.
+  Once those commands are ported to read from queue + vault, the module goes.
+  - File: [anpe/node_dir.py](anpe/node_dir.py)
 
-- [x] **Stale-claim sweep cooldown.** Sweep runs every loop iteration and can write duplicate `error_retry` events under contention. Limit to once per worker startup, or rate-limit (e.g. 60s).
-  - File: [runner.py:128-130](anpe/engine/runner.py#L128-L130)
+## P3 — small cleanups
 
-- [x] **`force=True` should not change uid length.** Move the nonce into `args["_nonce"]` so the uid stays content-addressed and a fixed length.
-  - File: [queue.py:64-67](anpe/engine/queue.py#L64-L67)
+- [ ] **De-duplicate `node_id`.**
+  Stored on `Candidate.node_id` *and* injected into `args["node_id"]` by every
+  step except bootstrap. Work functions read `args["node_id"]`. Pick one — keep
+  it on the queue row (the partition key), pass to `work(node_id, args, ...)`
+  as a separate argument. Removes the inconsistency and ~5 redundant lines.
+  - Files: all `*_step.py`
 
-- [x] **Handle `asyncio.CancelledError` explicitly in runner.** Currently caught by `except Exception` → marked as fatal. Should propagate cancellation instead.
-  - File: [runner.py:114](anpe/engine/runner.py#L114)
+- [ ] **`Args = dict[str, Any]` / `Outputs = dict[str, Any]` aliases.**
+  Removes ~15 `# type: ignore[type-arg]` comments across the engine and steps.
+  - File: [engine/base.py](anpe/engine/base.py)
 
-## P5 — small cleanups
-
-- [x] **Single `USER_VAULT_DIR` constant.** Defined twice, in vault.py and queue.py.
-
-- [x] **`StepLogger` timestamp typo.** `"%Y-%m-%d %H:%M.%S"` → `"%Y-%m-%d %H:%M:%S"`.
-  - File: [logger.py:11](anpe/engine/logger.py#L11)
-
-- [ ] **Document the `_attempted` / `skip_uids` contract on `Queue.claim`.** Right now the "no within-session retries" rule is invisible from the queue API.
+- [ ] **Document the `_attempted` / `skip_uids` contract on `Queue.claim`.**
+  The "no within-session retries" rule is invisible from the queue API.
   - Files: [queue.py:81](anpe/engine/queue.py#L81), [runner.py:48](anpe/engine/runner.py#L48)
-    > ... ?
 
-- [-] **Consistent step `version` scheme.** Mix of `"v1"`, `"v2"`, `SUMMARIZE_VERSION + ".2"`, `EVAL_VERSION`. Pick one.
+## P4 — flagged, not yet worth fixing
 
-  > skip
-
-- [x] **Bump `_content_uid` to 32 hex chars** (or document the 64-bit choice).
-  - File: [queue.py:42](anpe/engine/queue.py#L42)
-
-- [ ] **Assert sentinel node_id convention.** Real node*ids must not start with `*`.
-  - File: [anpe/prospect/seed.py](anpe/prospect/seed.py) (`node_id_for`)
-    > what?
+- [ ] **Cursor for `done_events`.**
+  `queue.done_events("fetch_siren")` returns *all* historical done events
+  forever; scan I/O grows linearly with corpus size. Eventually want
+  "scan since event id N." Premature today.
+  - File: [queue.py:215-221](anpe/engine/queue.py#L215-L221)
