@@ -8,10 +8,11 @@ from anpe.engine.queue import Queue
 from anpe.steps import api_throttles
 from anpe.engine.base import Candidate, FatalError, Log, RetryableError
 from anpe.engine.vault import Vault
+from anpe.clients.ddg import ddg_search
 from anpe.clients.errors import FetchBlockedError, FetchNotFoundError, FetchRetryableError
-from anpe.steps.registry import FETCH_TOOLS
 
 _TOOL = "ddg"
+_RAW_EXT = "json"
 _SIREN_STEP = "fetch_siren"
 
 
@@ -55,11 +56,10 @@ class FetchDdgStep:
     async def work(self, args: dict, vault: Vault, log: Log) -> dict:  # type: ignore[type-arg]
         node_id = args["node_id"]
         target = args["target"]
-        fetch_tool = FETCH_TOOLS[_TOOL]
 
         log(f"fetching [{_TOOL}] {target!r}  node={node_id}")
         try:
-            raw_data = fetch_tool.fetch(target)
+            raw_data = ddg_search(target)
         except FetchNotFoundError as e:
             log(f"not_found: {e}")
             raise FatalError(f"not_found: {e}") from e
@@ -71,7 +71,7 @@ class FetchDdgStep:
             raise RetryableError(f"blocked: {e}") from e
 
         log(f"fetched {len(raw_data)} chars")
-        uri = vault.store(node_id, self.name, node_id[:8], fetch_tool.raw_ext, raw_data.encode())
+        uri = vault.store(node_id, self.name, node_id[:8], _RAW_EXT, raw_data.encode())
         log(f"saved → {uri}")
         return {"raw_uri": uri, "tool": _TOOL, "target": target, "siren_uri": args["siren_uri"]}
 

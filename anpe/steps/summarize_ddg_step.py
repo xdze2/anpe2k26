@@ -8,8 +8,7 @@ from anpe.engine.queue import Queue
 from anpe.steps import api_throttles
 from anpe.engine.base import Candidate, Log
 from anpe.engine.vault import Vault
-from anpe.steps.registry import FETCH_TOOLS
-from anpe.steps.summarize_fn import SUMMARIZE_VERSION
+from anpe.steps.summarize_fn import SUMMARIZE_VERSION, ddg_summarize
 from anpe.tools.naf import _load_csv_index
 
 _TOOL = "ddg"
@@ -54,15 +53,13 @@ class SummarizeDdgStep:
         siren_uri = args["siren_uri"]
 
         log(f"node={node_id}  raw_ddg_uri={raw_ddg_uri}")
-        fetch_tool = FETCH_TOOLS[_TOOL]
-
         raw_data = vault.load(raw_ddg_uri).decode()
         log(f"loaded {len(raw_data)} chars of DDG data")
 
         siren_raw = json.loads(vault.load(siren_uri).decode())
         company_profile = _fmt_company_profile(siren_raw)
 
-        result = await fetch_tool.summarize(raw_data, "", company_profile)
+        result = await ddg_summarize(raw_data, "", company_profile)
         log(f"summarize done  status={result.status}  model={result.model}")
 
         payload = {
