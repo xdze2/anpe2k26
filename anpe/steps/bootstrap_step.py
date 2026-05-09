@@ -1,4 +1,4 @@
-"""bootstrap step — scan user_profile.yaml, produce company listing JSONL in vault."""
+"""bootstrap step — scan seed_query.yaml, produce company listing JSONL in vault."""
 
 from __future__ import annotations
 
@@ -12,17 +12,19 @@ from anpe.steps import api_throttles
 from anpe.engine.base import Candidate, Log
 from anpe.engine.vault import Vault
 
-_PROFILE_PATH = USER_DATA_DIR / "user_profile.yaml"
+_PROFILE_PATH = USER_DATA_DIR / "seed_query.yaml"
 _NODE_ID = "_bootstrap"
 
 
 class BootstrapStep:
     name = "bootstrap"
     version = "v2"
-    description = "Hash user_profile.yaml and produce a company listing JSONL in the vault."
+    description = "From seed_query.yaml produce a company listing JSONL in the vault."
     rate_gate = api_throttles.NONE
 
-    def scan(self, queue: Queue, _vault: Vault, refresh: bool = False, **_: object) -> list[Candidate]:
+    def scan(
+        self, queue: Queue, _vault: Vault, refresh: bool = False, **_: object
+    ) -> list[Candidate]:
         """Emit one candidate keyed on the profile's content hash.
 
         Suppressed if a done event already exists for these args, unless

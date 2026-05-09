@@ -1,7 +1,7 @@
-"""Bootstrap pipeline: build the company listing from user_profile.yaml.
+"""Bootstrap pipeline: build the company listing from seed_query.yaml.
 
 Steps:
-  1. Load user_profile.yaml
+  1. Load seed_query.yaml
   2. For each (departement, naf_code): fetch/cache API results
   3. Extract etablissements from raw results
   4. Filter by distance from each location's lat/lon
