@@ -22,19 +22,21 @@ Tackle top-down; each item is independently shippable.
     [fetch_siren_step.py:15-16](anpe/steps/fetch_siren_step.py#L15-L16),
     [engine/base.py](anpe/engine/base.py), [engine/registry.py](anpe/engine/registry.py)
 
-- [ ] **Introduce `scope` as a first-class step attribute, replacing the `_bootstrap` sentinel pattern.**
-  `node_id` is doing two jobs: partition key for vault paths/queue rows, *and*
-  "what entity this work concerns." Bootstrap and (future) profile-update are
-  process-level — there is no entity. The `_bootstrap` sentinel papers over this
-  and the spec already calls it out as "slightly off."
-  Make `Step.scope: Literal["node", "global"]` (or similar) explicit. Steps
-  with `scope="global"` use a fixed key (e.g. `_global` or the step name) for
-  the partition column, and the vault routes them under a global directory.
-  Per-node steps continue to carry a real `node_id`. Removes the smell, makes
-  room for future global steps without inventing more sentinels.
-  - Files: [bootstrap_step.py:16](anpe/steps/bootstrap_step.py#L16),
-    [engine/base.py](anpe/engine/base.py), [engine/queue.py](anpe/engine/queue.py),
-    [engine/vault.py](anpe/engine/vault.py)
+- [ ] **Make `node_id` optional on `Candidate` and queue rows; drop the `_bootstrap` sentinel.**
+  Steps are all process-level objects — the `node_id` is an argument to a
+  particular *run*, not a property of the step. Bootstrap just has no node to
+  attach to. The `_bootstrap` string is a workaround for `node_id: str` being
+  non-optional, not a meaningful concept.
+  Change: `Candidate.node_id: str | None` (None = no associated node).
+  Queue: `node_id` column stays `TEXT`, stored as `""` or `NULL` when absent —
+  decide which and be consistent. Vault: flip the directory order to
+  `user_vault/{step}/{node_id}/...`; for node-less runs omit the `node_id/`
+  segment, giving `user_vault/bootstrap/...` naturally.
+  Delete `_NODE_ID = "_bootstrap"` from bootstrap_step; pass `node_id=None`.
+  - [bootstrap_step.py:17](anpe/steps/bootstrap_step.py#L17) — delete `_NODE_ID`, pass `node_id=None` to `Candidate` and `vault.store`
+  - [engine/base.py:26](anpe/engine/base.py#L26) — `Candidate.node_id: str | None`
+  - [engine/queue.py:49](anpe/engine/queue.py#L49) — `Item.node_id: str | None`; schema: allow NULL
+  - [engine/vault.py:27](anpe/engine/vault.py#L27) — `store(node_id: str | None, ...)`, URI becomes `{step}/{node_id}/...` or `{step}/...`
 
 - [ ] **`scan()` returns `Iterator[Candidate]` instead of `list[Candidate]`.**
   Three steps already paper over the eager-list problem with a `count: int = 10`
