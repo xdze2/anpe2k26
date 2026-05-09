@@ -17,3 +17,4 @@ Project specification for ANPE2k26. See [00_process.md](00_process.md) for how t
 | [50_llm_eval_step.md](50_llm_eval_step.md) | LLM scoring of candidates against user profile |
 | [60_web_fetch_enrichment.md](60_web_fetch_enrichment.md) | Web fetch tool and browser fallback |
 | [70_classifier_performance.md](70_classifier_performance.md) | Roadmap: measuring eval accuracy and profile coverage |
+| [80_future.md](80_future.md) | Parked design questions: phase grouping, candidate budgets / lifecycle |
