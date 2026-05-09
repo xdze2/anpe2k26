@@ -3,16 +3,14 @@
 from __future__ import annotations
 
 import hashlib
-from pathlib import Path
 
 from anpe.steps.bootstrap.pipeline import rows_to_jsonl_bytes, run as _pipeline_run
-from anpe.config import USER_DATA_DIR
 from anpe.engine.queue import Queue
 from anpe.steps import api_throttles
 from anpe.engine.base import Candidate, Log
 from anpe.engine.vault import Vault
 
-_PROFILE_PATH = USER_DATA_DIR / "seed_query.yaml"
+_SEED_URI = "seed_query.yaml"
 
 
 class BootstrapStep:
@@ -22,19 +20,20 @@ class BootstrapStep:
     rate_gate = api_throttles.NONE
 
     def scan(
-        self, queue: Queue, _vault: Vault, refresh: bool = False, **_: object
+        self, queue: Queue, vault: Vault, refresh: bool = False, **_: object
     ) -> list[Candidate]:
         """Emit one candidate keyed on the profile's content hash.
 
         Suppressed if a done event already exists for these args, unless
         refresh=True (which forces re-emission for use with put --force).
         """
-        if not _PROFILE_PATH.exists():
+        if not vault.exists(_SEED_URI):
             return []
-        profile_hash = hashlib.sha256(_PROFILE_PATH.read_bytes()).hexdigest()[:16]
+        profile_bytes = vault.load(_SEED_URI)
+        profile_hash = hashlib.sha256(profile_bytes).hexdigest()[:16]
         args = {
             "profile_hash": profile_hash,
-            "profile_path": str(_PROFILE_PATH),
+            "seed_uri": _SEED_URI,
             "refresh": False,
         }
         if not refresh and queue.is_done(self.name, self.version, args):
@@ -42,7 +41,7 @@ class BootstrapStep:
         return [Candidate(step=self.name, node_id=None, args=args)]
 
     async def work(self, args: dict, vault: Vault, log: Log) -> dict:  # type: ignore[type-arg]
-        profile_path = Path(args["profile_path"])
+        profile_path = vault.root / args["seed_uri"]
         refresh = bool(args.get("refresh", False))
 
         log(f"profile_hash={args['profile_hash']}  refresh={refresh}")
