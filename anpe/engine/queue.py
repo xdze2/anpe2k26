@@ -212,10 +212,15 @@ class Queue:
         ).fetchall()
         return [Item(uid=r[0], node_id=r[1], step=step, args=json.loads(r[2])) for r in rows]
 
-    def done_events(self, step: str) -> list[dict]:  # type: ignore[type-arg]
-        """Return all done events for step ordered by id, each as {uid, node_id, outputs}."""
+    def done_events(self, step: str, *, newest_first: bool = False) -> list[dict]:  # type: ignore[type-arg]
+        """Return all done events for step, each as {uid, node_id, outputs}.
+
+        Default order is oldest-first (lowest id first).
+        Pass newest_first=True to get the most recent event at index 0.
+        """
+        order = "DESC" if newest_first else "ASC"
         rows = self._conn.execute(
-            "SELECT uid, node_id, outputs FROM events WHERE step = ? AND event = 'done' ORDER BY id",
+            f"SELECT uid, node_id, outputs FROM events WHERE step = ? AND event = 'done' ORDER BY id {order}",
             (step,),
         ).fetchall()
         return [{"uid": r[0], "node_id": r[1], "outputs": r[2]} for r in rows]
