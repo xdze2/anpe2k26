@@ -1,0 +1,115 @@
+#!/usr/bin/env bash
+# Fake anpe binary for the vhs demo — outputs canned text, no real calls.
+# Simulated user replies are printed by the script itself (with sleep delays)
+# so vhs never needs to type into a fake prompt.
+
+CMD="${1:-}"
+
+case "$CMD" in
+
+loop)
+  if [[ "$*" == *"ddg=200"* ]]; then
+    echo ""
+    echo "[bootstrap]   profile_hash=a1f3...   pulling SIRENE listing"
+    sleep 0.4
+    echo "              ████████████████████████████████  3,847 companies"
+    echo "              filtered: NAF 62.* (IT services), Gironde + remote-friendly"
+    echo ""
+    sleep 0.3
+    echo "[fetch_siren] ◐ 50 / 3847   ─ rate-limited at 1 req/s, will resume"
+    sleep 0.4
+    echo "[fetch_ddg]   ◐ 50 / 50     ─ enriching what siren produced"
+    sleep 0.4
+    echo "[summarize]   ◐ 50 / 50     ─ Mistral, 2s/call"
+    sleep 0.6
+    echo ""
+    echo "  budget remaining: mistral 20 → 0   ddg 200 → 150   stopping."
+  else
+    echo ""
+    echo "[scan eval]      47 stale (profile updated)"
+    sleep 0.4
+    echo "[run  eval]      ████████████████████████████████  20/47 done"
+    sleep 0.4
+    echo "                 7 promoted to 'good'"
+    echo "                 9 demoted to 'discard'"
+    echo "                 4 'maybe'"
+    echo ""
+    sleep 0.5
+    echo "  Funnel after 2 passes:"
+    echo ""
+    echo "    surfaced now (good + new):  ▮▮▮▮▮▮▮  7"
+    echo "    surfaced before (good):     ▮▮▮▮▮▮▮▮▮▮▮▮  12"
+    echo "    consistent across passes:   ▮▮▮▮▮  5"
+    echo ""
+    echo "  budget spent: mistral 20/20.   27 evals remain stale (run again to flush)."
+  fi
+  ;;
+
+jobs)
+  echo ""
+  echo "  step              pending   done   discarded"
+  echo "  ─────────────────────────────────────────────"
+  sleep 0.1
+  echo "  bootstrap            –        1         –"
+  echo "  fetch_siren        3797       50         –"
+  echo "  fetch_ddg            –        50         –"
+  echo "  summarize_ddg        –        47         3"
+  echo "  eval                 –        47         –"
+  echo "  review              23        –         24"
+  echo ""
+  echo "  budget spent:  mistral 20/20   ddg 50/200"
+  ;;
+
+prospect)
+  echo ""
+  echo "──────── Vinili Studio  •  Bordeaux  •  ~12 people ────────"
+  echo ""
+  echo "  AI-assisted wine label design. Small team mixing creative"
+  echo "  direction with diffusion-model fine-tuning for niche"
+  echo "  typography. Recently partnered with two AOC cooperatives"
+  echo "  in the Médoc."
+  echo ""
+  echo "  score: good   fit: small team, AI applied to a concrete domain"
+  echo ""
+  printf "  > "
+  sleep 1.2
+  echo "interesting — wine angle is a surprise but I like that they're applying ML to something real"
+  echo ""
+  sleep 0.6
+  echo "──────── DéciTech  •  Bordeaux  •  ~30 people ─────────────"
+  echo "  Decision-support consulting for retail logistics."
+  echo "  score: maybe"
+  echo ""
+  printf "  > "
+  sleep 1.0
+  echo "too consulting-shaped, pass"
+  echo ""
+  sleep 0.4
+  echo "  2 reactions saved."
+  ;;
+
+profile)
+  sleep 0.4
+  echo ""
+  echo "  Synthesizing diff against current profile via Mistral..."
+  sleep 0.8
+  echo ""
+  echo "  ── proposed additions ─────────────────────────────────"
+  echo "  + Strong preference for ML applied to a *non-tech* domain"
+  echo "    (wine, biology, art) over generic data-pipeline work"
+  echo "  + Explicit dislike: consulting-shaped engagements"
+  echo "  + 'Surprising' sector matches are welcome"
+  echo ""
+  printf "  Apply? [y/N] "
+  sleep 1.0
+  echo "y"
+  sleep 0.3
+  echo "  Profile written: user_profile_20260509T1815.md"
+  echo "  ── 3 reactions consolidated. 47 evals are now stale."
+  ;;
+
+*)
+  echo "anpe: unknown command '$CMD'" >&2
+  exit 1
+  ;;
+esac
