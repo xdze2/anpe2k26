@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import httpx
 
-from anpe.prospect.errors import FetchNotFoundError, FetchRetryableError
+from anpe.clients.errors import FetchNotFoundError, FetchRetryableError
 
 _SEARCH_URL = "https://recherche-entreprises.api.gouv.fr/search"
 

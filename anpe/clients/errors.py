@@ -1,4 +1,4 @@
-"""Typed exceptions for fetch tools."""
+"""Typed exceptions for external service clients."""
 
 from __future__ import annotations
 

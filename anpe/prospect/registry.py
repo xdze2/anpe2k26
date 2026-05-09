@@ -5,7 +5,7 @@ from __future__ import annotations
 from collections.abc import Awaitable, Callable
 from dataclasses import dataclass
 
-from anpe.prospect.fetch.ddg import ddg_search
+from anpe.clients.ddg import ddg_search
 from anpe.prospect.summarize import SUMMARIZE_VERSION, ddg_summarize
 from anpe.prospect.types import SummarizeResult
 

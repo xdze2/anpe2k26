@@ -6,7 +6,7 @@ import json
 
 from ddgs import DDGS
 
-from anpe.prospect.errors import FetchNotFoundError
+from anpe.clients.errors import FetchNotFoundError
 
 
 def ddg_search(query: str, max_results: int = 10) -> str:
