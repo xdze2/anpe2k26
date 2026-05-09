@@ -277,100 +277,75 @@ class TestSummarizeDdgStepScan:
 
 class TestEvalStepScan:
     @pytest.fixture(autouse=True)
-    def patch_nodes_dir(self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
-        nodes_dir = tmp_path / "nodes"
-        nodes_dir.mkdir()
-        monkeypatch.setattr("anpe.engine.steps.eval.NODES_DIR", nodes_dir)
-        monkeypatch.setattr("anpe.node_dir.NODES_DIR", nodes_dir)
-        self.nodes_dir = nodes_dir
-        self.profile = tmp_path / "profile.md"
-        self.profile.write_text("I want X", encoding="utf-8")
-        monkeypatch.setattr("anpe.engine.steps.eval.active_profile_file", lambda: self.profile)
+    def setup(self, tmp_path: Path) -> None:
         self.queue = _make_queue(tmp_path)
         self.vault = _make_vault(tmp_path)
 
-    def _with_summary(self, node_id: str, uid: str = "u1") -> Path:
-        from anpe.prospect.registry import FETCH_TOOLS
-        version = FETCH_TOOLS["ddg"].version
-        node = _make_node(self.nodes_dir, node_id)
-        _append_fetch_event(node, {"event": "put", "uid": uid, "tool": "ddg", "target": "t", "ts": _now()})
-        _append_fetch_event(node, {"event": "fetch_done", "uid": uid, "raw_file": "r.json", "ts": _now()})
-        fname = f"sum_ddg_t_ok_20260508_{uid}.json"
-        _write_sum_file(node, fname, uid, version)
-        _append_fetch_event(node, {"event": "summarize_done", "uid": uid, "result_file": fname, "ts": _now()})
-        return node
+    def _seed_profile(self) -> None:
+        """Write user_preference.md into the scratch vault root."""
+        self.vault.root.mkdir(parents=True, exist_ok=True)
+        (self.vault.root / "user_preference.md").write_bytes(b"I want X")
 
-    def test_no_profile_returns_empty(self, monkeypatch: pytest.MonkeyPatch) -> None:
+    def _put_summarize_ddg_done(self, node_id: str = "acme_sa_123456789", summary: str = "ok summary") -> str:
+        """Store a summary in the vault and record a summarize_ddg done event. Returns summary_uri."""
+        summary_uri = self.vault.store(
+            node_id, "summarize_ddg", node_id[:8], "json",
+            json.dumps({"summary": summary, "status": "ok"}).encode(),
+        )
+        args = {"node_id": node_id, "raw_ddg_uri": "x/fetch_ddg/raw.json", "siren_uri": "x/fetch_siren/s.json"}
+        self.queue.put(node_id, "summarize_ddg", "v_test", args)
+        uid = list(self.queue.pending("summarize_ddg"))[0].uid
+        self.queue.mark_done(uid, "summarize_ddg", node_id, {"summary_uri": summary_uri})
+        return summary_uri
+
+    def test_no_profile_returns_empty(self) -> None:
         from anpe.engine.steps.eval import EvalStep
-        monkeypatch.setattr("anpe.engine.steps.eval.active_profile_file", lambda: None)
-        self._with_summary("node_1")
+        self._put_summarize_ddg_done()
         assert EvalStep().scan(self.queue, self.vault) == []
 
-    def test_node_with_summary_is_candidate(self) -> None:
+    def test_summarize_done_is_candidate(self) -> None:
         from anpe.engine.steps.eval import EvalStep
-        self._with_summary("node_1")
+        self._seed_profile()
+        summary_uri = self._put_summarize_ddg_done()
         candidates = EvalStep().scan(self.queue, self.vault)
         assert len(candidates) == 1
-        assert candidates[0].node_id == "node_1"
+        assert candidates[0].node_id == "acme_sa_123456789"
+        assert candidates[0].args["summary_uri"] == summary_uri
+        assert candidates[0].args["profile_uri"] == "user_preference.md"
 
-    def test_node_without_summary_not_a_candidate(self) -> None:
+    def test_no_summarize_done_returns_empty(self) -> None:
         from anpe.engine.steps.eval import EvalStep
-        _make_node(self.nodes_dir, "node_1")
+        self._seed_profile()
+        assert EvalStep().scan(self.queue, self.vault) == []
+
+    def test_summarize_done_missing_summary_uri_skipped(self) -> None:
+        from anpe.engine.steps.eval import EvalStep
+        self._seed_profile()
+        args = {"node_id": "acme_sa_123456789", "raw_ddg_uri": "x", "siren_uri": "y"}
+        self.queue.put("acme_sa_123456789", "summarize_ddg", "v_test", args)
+        uid = list(self.queue.pending("summarize_ddg"))[0].uid
+        self.queue.mark_done(uid, "summarize_ddg", "acme_sa_123456789", {"status": "ok"})
         assert EvalStep().scan(self.queue, self.vault) == []
 
     def test_already_evaled_not_a_candidate(self) -> None:
-        from anpe.engine.steps.eval import EvalStep, EVAL_VERSION
-        node = self._with_summary("node_1")
-        sum_file = "sum_ddg_t_ok_20260508_u1.json"
-        profile_uri = str(self.profile)
-        _write_eval_file(node, "eval_20260508_node_1.json", sum_file, profile_uri, EVAL_VERSION)
-        assert EvalStep().scan(self.queue, self.vault) == []
-
-    def test_stale_eval_version_is_candidate(self) -> None:
         from anpe.engine.steps.eval import EvalStep
-        node = self._with_summary("node_1")
-        sum_file = "sum_ddg_t_ok_20260508_u1.json"
-        _write_eval_file(node, "eval_20260508_node_1.json", sum_file, str(self.profile), "old_version")
-        assert len(EvalStep().scan(self.queue, self.vault)) == 1
+        self._seed_profile()
+        summary_uri = self._put_summarize_ddg_done()
 
-    def test_exclude_reaction_filter(self, monkeypatch: pytest.MonkeyPatch) -> None:
-        from anpe.engine.steps.eval import EvalStep
-        self._with_summary("node_1")
-        monkeypatch.setattr(
-            "anpe.node_dir.NodeDir.get_latest_review",
-            lambda self: {"reaction": "discard"},
-        )
-        assert EvalStep().scan(self.queue, self.vault, exclude_reaction="discard") == []
-        assert len(EvalStep().scan(self.queue, self.vault, exclude_reaction="good")) == 1
+        step = EvalStep()
+        candidates = step.scan(self.queue, self.vault)
+        assert len(candidates) == 1
 
-    def test_min_score_filter_skips_low_score(self) -> None:
-        from anpe.engine.steps.eval import EvalStep
-        node = self._with_summary("node_1")
-        sum_file = "sum_ddg_t_ok_20260508_u1.json"
-        _write_eval_file(node, "eval_20260508_node_1.json", sum_file, str(self.profile), "old_version", score="discard")
-        assert EvalStep().scan(self.queue, self.vault, min_score="maybe") == []
+        c = candidates[0]
+        self.queue.put(c.node_id, step.name, step.version, c.args)
+        uid = list(self.queue.pending(step.name))[0].uid
+        self.queue.mark_done(uid, step.name, c.node_id, {"score": "good"})
 
-    def test_min_score_filter_keeps_high_score(self) -> None:
-        from anpe.engine.steps.eval import EvalStep
-        node = self._with_summary("node_1")
-        sum_file = "sum_ddg_t_ok_20260508_u1.json"
-        _write_eval_file(node, "eval_20260508_node_1.json", sum_file, str(self.profile), "old_version", score="good")
-        assert len(EvalStep().scan(self.queue, self.vault, min_score="maybe")) == 1
+        assert step.scan(self.queue, self.vault) == []
 
-    def test_no_prior_eval_passes_min_score(self) -> None:
+    def test_multiple_nodes_all_emitted(self) -> None:
         from anpe.engine.steps.eval import EvalStep
-        self._with_summary("node_1")
-        assert len(EvalStep().scan(self.queue, self.vault, min_score="good")) == 1
-
-    def test_context_carries_score_and_reaction(self, monkeypatch: pytest.MonkeyPatch) -> None:
-        from anpe.engine.steps.eval import EvalStep
-        node = self._with_summary("node_1")
-        sum_file = "sum_ddg_t_ok_20260508_u1.json"
-        _write_eval_file(node, "eval_old.json", sum_file, str(self.profile), "old_version", score="maybe")
-        monkeypatch.setattr(
-            "anpe.node_dir.NodeDir.get_latest_review",
-            lambda self: {"reaction": "good"},
-        )
-        candidates = EvalStep().scan(self.queue, self.vault)
-        assert candidates[0].context["score"] == "maybe"
-        assert candidates[0].context["reaction"] == "good"
+        self._seed_profile()
+        for i in range(3):
+            self._put_summarize_ddg_done(node_id=f"co_{i}")
+        assert len(EvalStep().scan(self.queue, self.vault)) == 3

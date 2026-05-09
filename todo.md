@@ -7,7 +7,7 @@ Tackle top-down; each item is independently shippable.
 
 ## P1 — broken / blocks end-to-end
 
-- [ ] **`EvalStep.scan` rewrite** — currently reads old-pipeline `user_data/nodes/<id>/summarize/` and `eval_results/`. Rewire to source from `summarize_ddg` done events (vault `summary_uri`), suppress with `queue.is_done()`, drop the `NodeDir` filesystem walk. Also fix `profile_uri`: it is currently an absolute filesystem path stuffed into a key called `_uri` — either store profile in vault, or rename the key.
+- [x] **`EvalStep.scan` rewrite** — currently reads old-pipeline `user_data/nodes/<id>/summarize/` and `eval_results/`. Rewire to source from `summarize_ddg` done events (vault `summary_uri`), suppress with `queue.is_done()`, drop the `NodeDir` filesystem walk. Also fix `profile_uri`: it is currently an absolute filesystem path stuffed into a key called `_uri` — either store profile in vault, or rename the key.
   - File: [anpe/engine/steps/eval.py](anpe/engine/steps/eval.py)
   - Tests: rewrite `TestEvalStepScan` to seed `summarize_ddg` done events, no `NODES_DIR` monkeypatch.
 
@@ -33,22 +33,23 @@ Tackle top-down; each item is independently shippable.
 
 - [ ] **`count` flag on scan is a limit, not a filter.** `count=10` default silently caps emission. Rename to `--limit`, drop the default (require explicit value), and document; or remove the cap and rely on `put` being idempotent.
   - Files: [fetch_siren.py:25](anpe/engine/steps/fetch_siren.py#L25), [fetch_ddg.py:25](anpe/engine/steps/fetch_ddg.py#L25)
+    > scan could be a generator...
 
 - [ ] **`targets/` log loop-back: implement or delete from spec.** Spec describes summarize → new_targets → fetch loop-back; pipeline doesn't do it. Decide which.
   - Files: [13_data_engine.md:198-204, 441-455](docs/specs/13_data_engine.md#L198-L204)
 
 ## P4 — robustness
 
-- [ ] **Define explicit `RetryableError` / `FatalError` exceptions.** Replace the `RuntimeError` vs `Exception` heuristic in the runner with a typed contract; document on `Step.work`.
+- [x] **Define explicit `RetryableError` / `FatalError` exceptions.** Replace the `RuntimeError` vs `Exception` heuristic in the runner with a typed contract; document on `Step.work`.
   - Files: [runner.py:108-119](anpe/engine/runner.py#L108-L119), [base.py](anpe/engine/steps/base.py), all step `work()` bodies
 
-- [ ] **Stale-claim sweep cooldown.** Sweep runs every loop iteration and can write duplicate `error_retry` events under contention. Limit to once per worker startup, or rate-limit (e.g. 60s).
+- [x] **Stale-claim sweep cooldown.** Sweep runs every loop iteration and can write duplicate `error_retry` events under contention. Limit to once per worker startup, or rate-limit (e.g. 60s).
   - File: [runner.py:128-130](anpe/engine/runner.py#L128-L130)
 
-- [ ] **`force=True` should not change uid length.** Move the nonce into `args["_nonce"]` so the uid stays content-addressed and a fixed length.
+- [x] **`force=True` should not change uid length.** Move the nonce into `args["_nonce"]` so the uid stays content-addressed and a fixed length.
   - File: [queue.py:64-67](anpe/engine/queue.py#L64-L67)
 
-- [ ] **Handle `asyncio.CancelledError` explicitly in runner.** Currently caught by `except Exception` → marked as fatal. Should propagate cancellation instead.
+- [x] **Handle `asyncio.CancelledError` explicitly in runner.** Currently caught by `except Exception` → marked as fatal. Should propagate cancellation instead.
   - File: [runner.py:114](anpe/engine/runner.py#L114)
 
 ## P5 — small cleanups

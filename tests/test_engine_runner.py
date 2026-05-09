@@ -134,7 +134,6 @@ async def test_runner_empty_queue_returns_immediately(tmp_queue: Queue, tmp_vaul
 @pytest.fixture(autouse=True)
 def patch_nodes(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setattr("anpe.node_dir.NODES_DIR", tmp_path / "nodes")
-    monkeypatch.setattr("anpe.engine.steps.eval.NODES_DIR", tmp_path / "nodes")
     monkeypatch.setattr("anpe.engine.queue.QUEUE_DB", tmp_path / "queue.db")
     monkeypatch.setattr("anpe.engine.vault.USER_VAULT_DIR", tmp_path / "vault")
 
