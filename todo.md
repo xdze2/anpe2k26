@@ -22,7 +22,7 @@ Tackle top-down; each item is independently shippable.
     [fetch_siren_step.py:15-16](anpe/steps/fetch_siren_step.py#L15-L16),
     [engine/base.py](anpe/engine/base.py), [engine/registry.py](anpe/engine/registry.py)
 
-- [ ] **Make `node_id` optional on `Candidate` and queue rows; drop the `_bootstrap` sentinel.**
+- [x] **Make `node_id` optional on `Candidate` and queue rows; drop the `_bootstrap` sentinel.**
   Steps are all process-level objects — the `node_id` is an argument to a
   particular *run*, not a property of the step. Bootstrap just has no node to
   attach to. The `_bootstrap` string is a workaround for `node_id: str` being

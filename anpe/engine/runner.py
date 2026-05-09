@@ -19,7 +19,7 @@ POLL_INTERVAL_S = 0.5
 @dataclass
 class RunResult:
     uid: str
-    node_id: str
+    node_id: str | None
     step: str
     status: str          # "done" | "error_retry" | "error_abort"
     outputs: dict = field(default_factory=dict)   # type: ignore[type-arg]
@@ -95,7 +95,10 @@ class Runner:
                 self._attempted.add(item.uid)
                 self._active += 1
 
-            log_path = self._vault.root / item.node_id / item.step / f"{item.uid[:8]}.log"
+            if item.node_id is not None:
+                log_path = self._vault.root / item.step / item.node_id / f"{item.uid[:8]}.log"
+            else:
+                log_path = self._vault.root / item.step / f"{item.uid[:8]}.log"
             logger = StepLogger(log_path)
             gate = getattr(step, "rate_gate", NoGate())
             try:

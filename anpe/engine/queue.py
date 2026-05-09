@@ -21,7 +21,7 @@ _SCHEMA = """
 CREATE TABLE IF NOT EXISTS events (
     id          INTEGER PRIMARY KEY AUTOINCREMENT,
     uid         TEXT NOT NULL,
-    node_id     TEXT NOT NULL,
+    node_id     TEXT,
     step        TEXT NOT NULL,
     event       TEXT NOT NULL,
     ts          TEXT NOT NULL,
@@ -46,7 +46,7 @@ def _content_uid(step: str, version: str, args: dict) -> str:  # type: ignore[ty
 @dataclass
 class Item:
     uid: str
-    node_id: str
+    node_id: str | None   # None for process-level steps with no associated node
     step: str
     args: dict  # type: ignore[type-arg]
 
@@ -59,7 +59,7 @@ class Queue:
         self._conn.executescript(_SCHEMA)
         self._conn.commit()
 
-    def put(self, node_id: str, step: str, version: str, args: dict, force: bool = False) -> str:  # type: ignore[type-arg]
+    def put(self, node_id: str | None, step: str, version: str, args: dict, force: bool = False) -> str:  # type: ignore[type-arg]
         """Enqueue a work item. Returns uid. Idempotent unless force=True."""
         if force:
             import secrets
@@ -124,14 +124,14 @@ class Queue:
             )
         return Item(uid=uid, node_id=node_id, step=step, args=json.loads(args_json))
 
-    def mark_done(self, uid: str, step: str, node_id: str, outputs: dict) -> None:  # type: ignore[type-arg]
+    def mark_done(self, uid: str, step: str, node_id: str | None, outputs: dict) -> None:  # type: ignore[type-arg]
         with self._conn:
             self._conn.execute(
                 "INSERT INTO events (uid, node_id, step, event, ts, outputs) VALUES (?,?,?,?,?,?)",
                 (uid, node_id, step, "done", _now(), json.dumps(outputs)),
             )
 
-    def mark_error(self, uid: str, step: str, node_id: str, reason: str, retryable: bool) -> None:
+    def mark_error(self, uid: str, step: str, node_id: str | None, reason: str, retryable: bool) -> None:
         event = "error_retry" if retryable else "error_abort"
         with self._conn:
             self._conn.execute(

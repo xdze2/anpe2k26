@@ -13,7 +13,6 @@ from anpe.engine.base import Candidate, Log
 from anpe.engine.vault import Vault
 
 _PROFILE_PATH = USER_DATA_DIR / "seed_query.yaml"
-_NODE_ID = "_bootstrap"
 
 
 class BootstrapStep:
@@ -40,7 +39,7 @@ class BootstrapStep:
         }
         if not refresh and queue.is_done(self.name, self.version, args):
             return []
-        return [Candidate(step=self.name, node_id=_NODE_ID, args=args)]
+        return [Candidate(step=self.name, node_id=None, args=args)]
 
     async def work(self, args: dict, vault: Vault, log: Log) -> dict:  # type: ignore[type-arg]
         profile_path = Path(args["profile_path"])
@@ -51,7 +50,7 @@ class BootstrapStep:
         log(f"pipeline returned {len(rows)} rows")
 
         jsonl_bytes = rows_to_jsonl_bytes(rows)
-        uri = vault.store(_NODE_ID, self.name, "listing", "jsonl", jsonl_bytes)
+        uri = vault.store(None, self.name, "listing", "jsonl", jsonl_bytes)
         log(f"saved {len(jsonl_bytes)} bytes → {uri}")
 
         return {"listing_uri": uri, "count": len(rows)}

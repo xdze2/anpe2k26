@@ -23,7 +23,7 @@ Log = Callable[[str], None]
 @dataclass
 class Candidate:
     step: str
-    node_id: str
+    node_id: str | None   # None for process-level steps with no associated node
     args: dict  # type: ignore[type-arg]   — vault URIs + scalar params the work fn needs
     context: dict = field(default_factory=dict)  # type: ignore[type-arg]  — signals for filtering, not stored in queue
 

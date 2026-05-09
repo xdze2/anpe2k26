@@ -141,15 +141,12 @@ stream; it is not stored in the queue.
 ### node_id for process-level steps
 
 Most steps are per-company: `node_id` is the company node directory name. Some
-steps are not — `bootstrap` produces a company listing from the user profile,
-with no company node to attach to. These use a sentinel string prefixed with
-`_` (e.g. `_bootstrap`). The underscore is a convention: real node ids never
-start with `_`, so there is no collision risk.
+steps have no associated node — `bootstrap` produces a company listing from the
+user profile with no company to attach to. These pass `node_id=None`.
 
-This feels slightly off because `node_id` implies "a company node," but it is
-pragmatic: the queue, vault URI scheme, and history queries all work unchanged.
-The alternative — a separate nullable column or a union type — adds complexity
-for a rare case. If the number of process-level steps grows, revisit.
+`Candidate.node_id` is `str | None`. The queue stores `NULL`; the vault omits
+the `node_id` path segment, giving `bootstrap/20260509T120000_listing.jsonl`
+instead of `bootstrap/{node_id}/...`.
 
 ---
 
@@ -230,7 +227,7 @@ that flags can read.
 
 ```python
 class Vault:
-    def store(self, node_id: str, step: str, slug: str, ext: str, data: bytes) -> str: ...  # returns uri
+    def store(self, node_id: str | None, step: str, slug: str, ext: str, data: bytes) -> str: ...  # returns uri
     def load(self, uri: str) -> bytes: ...
     def exists(self, uri: str) -> bool: ...
 ```
@@ -239,8 +236,10 @@ Callers pass metadata; the vault builds and returns the opaque URI. This keeps
 URI construction logic in one place and lets the storage backend change without
 touching step code.
 
-URI convention: `{node_id}/{step}/{timestamp}_{slug}.{ext}` — stable,
+URI convention: `{step}/{node_id}/{timestamp}_{slug}.{ext}` — stable,
 human-readable, trivially mapped to a filesystem path or a database key.
+For process-level steps where `node_id` is `None`, the segment is omitted:
+`{step}/{timestamp}_{slug}.{ext}`.
 
 **Vault is write-once.** Every artifact path includes a creation timestamp;
 files are never overwritten or modified after creation. This invariant is what
