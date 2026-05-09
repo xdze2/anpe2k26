@@ -2,16 +2,11 @@
 
 from __future__ import annotations
 
-import asyncio
 import hashlib
 import json
 from urllib.parse import urlparse
 
-from pydantic_ai import Agent
-from pydantic_ai.models.mistral import MistralModel
-from pydantic_ai.providers.mistral import MistralProvider
-
-from anpe.config import settings
+from anpe.clients.mistral import LLMCapacityError, LLMCreditsError, mistral_run  # noqa: F401
 
 from anpe.steps.types import (
     FetchTarget,
@@ -87,7 +82,7 @@ Rules:
 - status "no_data": fetch returned nothing actionable, continue if queue has more.
   new_targets MUST be empty — do NOT suggest DDG queries or URLs to compensate.
 
-- new_targets: list of (tool, target) pairs worth fetching next.
+- new_targets: list of {"tool": ..., "target": ...} objects worth fetching next.
   DDG results are snippets only — always propose the most relevant URLs as "fetch"
   targets so the pipeline can retrieve the full content. Priority order:
     1. Company's official website
@@ -119,24 +114,6 @@ SUMMARIZE_VERSION = hashlib.sha1(
     (_SYSTEM + _MODEL_NAME + _BLACKLIST_KEY).encode()
 ).hexdigest()[:6]
 
-MAX_RETRIES = 3
-_RETRY_BASE_DELAY = 10.0  # seconds, doubles each attempt
-
-
-class LLMCreditsError(RuntimeError):
-    """Raised on HTTP 402 — no credits, unretryable."""
-
-
-_model = MistralModel(
-    _MODEL_NAME,
-    provider=MistralProvider(api_key=settings.mistral_api_key),
-)
-
-_agent: Agent[None, SummarizeResult] = Agent(
-    _model,
-    output_type=SummarizeResult,
-    system_prompt=_SYSTEM,
-)
 
 
 def _format_ddg_results(raw_json: str) -> str:
@@ -168,31 +145,8 @@ async def ddg_summarize(
 
     full_prompt = f"## System prompt\n\n{_SYSTEM}\n## User prompt\n\n{user_prompt}"
 
-    last_error: Exception | None = None
-    for attempt in range(MAX_RETRIES):
-        try:
-            result = await _agent.run(user_prompt)
-            output = result.output
-            output.prompt = full_prompt
-            output.version = SUMMARIZE_VERSION
-            output.model = _MODEL_NAME
-            return output
-        except Exception as e:
-            msg = str(e)
-            if "402" in msg:
-                raise LLMCreditsError(
-                    "No LLM credits — top up at https://console.mistral.ai/"
-                ) from e
-            if "429" in msg:
-                delay = _RETRY_BASE_DELAY * (2**attempt)
-                print(
-                    f"[llm] rate-limited (429), retrying in {delay:.0f}s "
-                    f"(attempt {attempt + 1}/{MAX_RETRIES})"
-                    f"error={e}"
-                )
-                await asyncio.sleep(delay)
-                last_error = e
-                continue
-            raise
-
-    raise RuntimeError(f"LLM call failed after {MAX_RETRIES} retries") from last_error
+    output = await mistral_run(SummarizeResult, _MODEL_NAME, _SYSTEM, user_prompt)
+    output.prompt = full_prompt
+    output.version = SUMMARIZE_VERSION
+    output.model = _MODEL_NAME
+    return output

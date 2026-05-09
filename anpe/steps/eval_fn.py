@@ -2,15 +2,11 @@
 
 from __future__ import annotations
 
-import asyncio
 import hashlib
 
 from pydantic import BaseModel
-from pydantic_ai import Agent
-from pydantic_ai.models.mistral import MistralModel
-from pydantic_ai.providers.mistral import MistralProvider
 
-from anpe.config import settings
+from anpe.clients.mistral import mistral_run
 
 _SYSTEM = """\
 You are a job-search assistant helping a tech professional evaluate whether a French
@@ -54,45 +50,7 @@ class EvalResult(BaseModel):
     uncertainty: str  # "low" | "medium" | "high"
 
 
-_model = MistralModel(
-    _MODEL_NAME,
-    provider=MistralProvider(api_key=settings.mistral_api_key),
-)
-
-_agent: Agent[None, EvalResult] = Agent(
-    _model,
-    output_type=EvalResult,
-    system_prompt=_SYSTEM,
-)
-
-MAX_RETRIES = 3
-_RETRY_BASE_DELAY = 10.0
-
-
 async def llm_eval(summary: str, profile: str) -> EvalResult:
     """Call the LLM to score a company summary against the user profile."""
     user_prompt = f"## User profile\n\n{profile}\n\n## Company summary\n\n{summary}"
-
-    last_error: Exception | None = None
-    for attempt in range(MAX_RETRIES):
-        try:
-            result = await _agent.run(user_prompt)
-            return result.output
-        except Exception as e:
-            msg = str(e)
-            if "402" in msg:
-                raise RuntimeError(
-                    "No LLM credits — top up at https://console.mistral.ai/"
-                ) from e
-            if "429" in msg:
-                delay = _RETRY_BASE_DELAY * (2**attempt)
-                print(
-                    f"[eval] rate-limited (429), retrying in {delay:.0f}s "
-                    f"(attempt {attempt + 1}/{MAX_RETRIES})"
-                )
-                await asyncio.sleep(delay)
-                last_error = e
-                continue
-            raise
-
-    raise RuntimeError(f"LLM eval failed after {MAX_RETRIES} retries") from last_error
+    return await mistral_run(EvalResult, _MODEL_NAME, _SYSTEM, user_prompt)
