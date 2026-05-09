@@ -6,8 +6,8 @@ from collections.abc import Awaitable, Callable
 from dataclasses import dataclass
 
 from anpe.clients.ddg import ddg_search
-from anpe.prospect.summarize import SUMMARIZE_VERSION, ddg_summarize
-from anpe.prospect.types import SummarizeResult
+from anpe.steps.summarize_fn import SUMMARIZE_VERSION, ddg_summarize
+from anpe.steps.types import SummarizeResult
 
 
 @dataclass

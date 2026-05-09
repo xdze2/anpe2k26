@@ -5,11 +5,11 @@ from __future__ import annotations
 import json
 
 from anpe.engine.queue import Queue
-from anpe.engine.steps import api_throttles
-from anpe.engine.steps.base import Candidate, FatalError, Log, RetryableError
+from anpe.steps import api_throttles
+from anpe.engine.base import Candidate, FatalError, Log, RetryableError
 from anpe.engine.vault import Vault
 from anpe.clients.errors import FetchBlockedError, FetchNotFoundError, FetchRetryableError
-from anpe.prospect.registry import FETCH_TOOLS
+from anpe.steps.registry import FETCH_TOOLS
 
 _TOOL = "ddg"
 _SIREN_STEP = "fetch_siren"

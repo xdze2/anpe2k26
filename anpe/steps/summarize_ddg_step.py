@@ -5,11 +5,11 @@ from __future__ import annotations
 import json
 
 from anpe.engine.queue import Queue
-from anpe.engine.steps import api_throttles
-from anpe.engine.steps.base import Candidate, Log
+from anpe.steps import api_throttles
+from anpe.engine.base import Candidate, Log
 from anpe.engine.vault import Vault
-from anpe.prospect.registry import FETCH_TOOLS
-from anpe.prospect.summarize import SUMMARIZE_VERSION
+from anpe.steps.registry import FETCH_TOOLS
+from anpe.steps.summarize_fn import SUMMARIZE_VERSION
 from anpe.tools.naf import _load_csv_index
 
 _TOOL = "ddg"

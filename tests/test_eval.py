@@ -3,7 +3,7 @@
 import pytest
 from pydantic_ai.models.test import TestModel
 
-from anpe.prospect.eval import EvalResult, EVAL_VERSION, _agent, llm_eval
+from anpe.steps.eval_fn import EvalResult, EVAL_VERSION, _agent, llm_eval
 
 
 def test_eval_version_is_six_chars():

@@ -12,7 +12,7 @@ from pathlib import Path
 import pytest
 
 from anpe.engine.queue import Queue
-from anpe.engine.steps.base import Candidate
+from anpe.engine.base import Candidate
 from anpe.engine.vault import Vault
 
 
@@ -103,16 +103,16 @@ class TestFetchSirenStepScan:
         return listing_uri
 
     def test_empty_when_no_bootstrap(self) -> None:
-        from anpe.engine.steps.fetch_siren import FetchSirenStep
+        from anpe.steps.fetch_siren_step import FetchSirenStep
         assert FetchSirenStep().scan(self.queue, self.vault) == []
 
     def test_bootstrap_not_done_returns_empty(self) -> None:
-        from anpe.engine.steps.fetch_siren import FetchSirenStep
+        from anpe.steps.fetch_siren_step import FetchSirenStep
         self.queue.put("_bootstrap", "bootstrap", "v2", {"profile_hash": "abc"})
         assert FetchSirenStep().scan(self.queue, self.vault) == []
 
     def test_listing_emits_candidate(self) -> None:
-        from anpe.engine.steps.fetch_siren import FetchSirenStep
+        from anpe.steps.fetch_siren_step import FetchSirenStep
         listing_uri = self._put_bootstrap_done('{"nom_complet": "Acme SA", "siren": "123456789"}\n')
 
         candidates = FetchSirenStep().scan(self.queue, self.vault)
@@ -121,7 +121,7 @@ class TestFetchSirenStepScan:
         assert candidates[0].args["listing_uri"] == listing_uri
 
     def test_already_done_not_a_candidate(self) -> None:
-        from anpe.engine.steps.fetch_siren import FetchSirenStep
+        from anpe.steps.fetch_siren_step import FetchSirenStep
         self._put_bootstrap_done('{"nom_complet": "Acme SA", "siren": "123456789"}\n')
 
         step = FetchSirenStep()
@@ -136,7 +136,7 @@ class TestFetchSirenStepScan:
         assert step.scan(self.queue, self.vault) == []
 
     def test_count_caps_candidates(self) -> None:
-        from anpe.engine.steps.fetch_siren import FetchSirenStep
+        from anpe.steps.fetch_siren_step import FetchSirenStep
         lines = "\n".join(
             json.dumps({"nom_complet": f"Co {i}", "siren": f"10000000{i}"})
             for i in range(5)
@@ -145,7 +145,7 @@ class TestFetchSirenStepScan:
         assert len(FetchSirenStep().scan(self.queue, self.vault, count=3)) == 3
 
     def test_multiple_companies_all_emitted(self) -> None:
-        from anpe.engine.steps.fetch_siren import FetchSirenStep
+        from anpe.steps.fetch_siren_step import FetchSirenStep
         lines = "\n".join(
             json.dumps({"nom_complet": f"Co {i}", "siren": f"10000000{i}"})
             for i in range(3)
@@ -174,11 +174,11 @@ class TestFetchDdgStepScan:
         return siren_uri
 
     def test_empty_when_no_siren_done(self) -> None:
-        from anpe.engine.steps.fetch_ddg import FetchDdgStep
+        from anpe.steps.fetch_ddg_step import FetchDdgStep
         assert FetchDdgStep().scan(self.queue, self.vault) == []
 
     def test_siren_done_emits_candidate(self) -> None:
-        from anpe.engine.steps.fetch_ddg import FetchDdgStep
+        from anpe.steps.fetch_ddg_step import FetchDdgStep
         siren_uri = self._put_siren_done()
 
         candidates = FetchDdgStep().scan(self.queue, self.vault)
@@ -187,7 +187,7 @@ class TestFetchDdgStepScan:
         assert candidates[0].args["target"] == "Acme entreprise informatique"
 
     def test_already_done_not_a_candidate(self) -> None:
-        from anpe.engine.steps.fetch_ddg import FetchDdgStep
+        from anpe.steps.fetch_ddg_step import FetchDdgStep
         self._put_siren_done()
 
         step = FetchDdgStep()
@@ -202,13 +202,13 @@ class TestFetchDdgStepScan:
         assert step.scan(self.queue, self.vault) == []
 
     def test_count_caps_candidates(self) -> None:
-        from anpe.engine.steps.fetch_ddg import FetchDdgStep
+        from anpe.steps.fetch_ddg_step import FetchDdgStep
         for i in range(5):
             self._put_siren_done(node_id=f"co_{i}_10000000{i}", siren=f"10000000{i}")
         assert len(FetchDdgStep().scan(self.queue, self.vault, count=3)) == 3
 
     def test_multiple_companies_all_emitted(self) -> None:
-        from anpe.engine.steps.fetch_ddg import FetchDdgStep
+        from anpe.steps.fetch_ddg_step import FetchDdgStep
         for i in range(3):
             self._put_siren_done(node_id=f"co_{i}_10000000{i}", siren=f"10000000{i}")
         assert len(FetchDdgStep().scan(self.queue, self.vault)) == 3
@@ -236,11 +236,11 @@ class TestSummarizeDdgStepScan:
         return siren_uri, raw_ddg_uri
 
     def test_empty_when_no_fetch_ddg_done(self) -> None:
-        from anpe.engine.steps.summarize_ddg import SummarizeDdgStep
+        from anpe.steps.summarize_ddg_step import SummarizeDdgStep
         assert SummarizeDdgStep().scan(self.queue, self.vault) == []
 
     def test_fetch_ddg_done_emits_candidate(self) -> None:
-        from anpe.engine.steps.summarize_ddg import SummarizeDdgStep
+        from anpe.steps.summarize_ddg_step import SummarizeDdgStep
         siren_uri, raw_ddg_uri = self._put_fetch_ddg_done()
 
         candidates = SummarizeDdgStep().scan(self.queue, self.vault)
@@ -250,7 +250,7 @@ class TestSummarizeDdgStepScan:
         assert candidates[0].args["siren_uri"] == siren_uri
 
     def test_already_done_not_a_candidate(self) -> None:
-        from anpe.engine.steps.summarize_ddg import SummarizeDdgStep
+        from anpe.steps.summarize_ddg_step import SummarizeDdgStep
         self._put_fetch_ddg_done()
 
         step = SummarizeDdgStep()
@@ -265,7 +265,7 @@ class TestSummarizeDdgStepScan:
         assert step.scan(self.queue, self.vault) == []
 
     def test_multiple_nodes_all_emitted(self) -> None:
-        from anpe.engine.steps.summarize_ddg import SummarizeDdgStep
+        from anpe.steps.summarize_ddg_step import SummarizeDdgStep
         for i in range(3):
             self._put_fetch_ddg_done(node_id=f"co_{i}")
         assert len(SummarizeDdgStep().scan(self.queue, self.vault)) == 3
@@ -299,12 +299,12 @@ class TestEvalStepScan:
         return summary_uri
 
     def test_no_profile_returns_empty(self) -> None:
-        from anpe.engine.steps.eval import EvalStep
+        from anpe.steps.eval_step import EvalStep
         self._put_summarize_ddg_done()
         assert EvalStep().scan(self.queue, self.vault) == []
 
     def test_summarize_done_is_candidate(self) -> None:
-        from anpe.engine.steps.eval import EvalStep
+        from anpe.steps.eval_step import EvalStep
         self._seed_profile()
         summary_uri = self._put_summarize_ddg_done()
         candidates = EvalStep().scan(self.queue, self.vault)
@@ -314,12 +314,12 @@ class TestEvalStepScan:
         assert candidates[0].args["profile_uri"] == "user_preference.md"
 
     def test_no_summarize_done_returns_empty(self) -> None:
-        from anpe.engine.steps.eval import EvalStep
+        from anpe.steps.eval_step import EvalStep
         self._seed_profile()
         assert EvalStep().scan(self.queue, self.vault) == []
 
     def test_summarize_done_missing_summary_uri_skipped(self) -> None:
-        from anpe.engine.steps.eval import EvalStep
+        from anpe.steps.eval_step import EvalStep
         self._seed_profile()
         args = {"node_id": "acme_sa_123456789", "raw_ddg_uri": "x", "siren_uri": "y"}
         self.queue.put("acme_sa_123456789", "summarize_ddg", "v_test", args)
@@ -328,7 +328,7 @@ class TestEvalStepScan:
         assert EvalStep().scan(self.queue, self.vault) == []
 
     def test_already_evaled_not_a_candidate(self) -> None:
-        from anpe.engine.steps.eval import EvalStep
+        from anpe.steps.eval_step import EvalStep
         self._seed_profile()
         summary_uri = self._put_summarize_ddg_done()
 
@@ -344,7 +344,7 @@ class TestEvalStepScan:
         assert step.scan(self.queue, self.vault) == []
 
     def test_multiple_nodes_all_emitted(self) -> None:
-        from anpe.engine.steps.eval import EvalStep
+        from anpe.steps.eval_step import EvalStep
         self._seed_profile()
         for i in range(3):
             self._put_summarize_ddg_done(node_id=f"co_{i}")

@@ -21,8 +21,8 @@ from typing import Any
 
 import yaml
 
-from anpe.bootstrap.filter import HEADCOUNT_BANDS, tranche_in_range, within_radius
-from anpe.bootstrap.search import fetch_pair
+from anpe.steps.bootstrap.filter import HEADCOUNT_BANDS, tranche_in_range, within_radius
+from anpe.steps.bootstrap.search import fetch_pair
 from anpe.tools.naf import _load_csv_index as _naf_index
 
 logger = logging.getLogger(__name__)

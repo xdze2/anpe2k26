@@ -1,7 +1,7 @@
 """Tests for anpe/bootstrap/filter.py — pure distance and size filtering."""
 
 import pytest
-from anpe.bootstrap.filter import haversine_km, within_radius, tranche_in_range
+from anpe.steps.bootstrap.filter import haversine_km, within_radius, tranche_in_range
 
 
 def test_haversine_known_distance():

@@ -2,15 +2,15 @@
 
 from __future__ import annotations
 
-from anpe.engine.steps.base import Step
+from anpe.engine.base import Step
 
 
 def _load() -> dict[str, Step]:
-    from anpe.engine.steps.bootstrap import BootstrapStep
-    from anpe.engine.steps.eval import EvalStep
-    from anpe.engine.steps.fetch_ddg import FetchDdgStep
-    from anpe.engine.steps.fetch_siren import FetchSirenStep
-    from anpe.engine.steps.summarize_ddg import SummarizeDdgStep
+    from anpe.steps.bootstrap_step import BootstrapStep
+    from anpe.steps.eval_step import EvalStep
+    from anpe.steps.fetch_ddg_step import FetchDdgStep
+    from anpe.steps.fetch_siren_step import FetchSirenStep
+    from anpe.steps.summarize_ddg_step import SummarizeDdgStep
 
     steps: list[Step] = [BootstrapStep(), FetchSirenStep(), FetchDdgStep(), SummarizeDdgStep(), EvalStep()]
     return {s.name: s for s in steps}

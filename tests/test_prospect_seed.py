@@ -1,6 +1,6 @@
 """Tests for anpe/prospect/seed.py."""
 
-from anpe.prospect.seed import slugify, node_id_for
+from anpe.steps.seed_fn import slugify, node_id_for
 
 
 def test_slugify_basic():

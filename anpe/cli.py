@@ -228,9 +228,9 @@ def prospect_review() -> None:
 
     Example: anpe prospect review
     """
-    from anpe.prospect.review import run_review
-
-    run_review()
+    # TODO: wire to ReviewStep via runner (prospect/review.py removed)
+    from rich.console import Console
+    Console().print("[yellow]review command not yet wired to ReviewStep[/]")
 
 
 
@@ -425,7 +425,7 @@ def cmd_scan(
         flags["refresh"] = refresh
 
     from anpe.engine.queue import Queue
-    from anpe.engine.steps.base import Candidate
+    from anpe.engine.base import Candidate
     from anpe.engine.vault import Vault
     queue = Queue()
     vault = Vault()

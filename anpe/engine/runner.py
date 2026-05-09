@@ -9,7 +9,7 @@ from dataclasses import dataclass, field
 from anpe.engine.logger import StepLogger
 from anpe.engine.queue import Queue
 from anpe.engine.rate_gate import NoGate
-from anpe.engine.steps.base import FatalError, RetryableError, Step
+from anpe.engine.base import FatalError, RetryableError, Step
 from anpe.engine.vault import Vault
 
 CLAIM_TIMEOUT_S = 300

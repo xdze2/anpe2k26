@@ -19,7 +19,7 @@ from pydantic_ai.models.mistral import MistralModel
 from pydantic_ai.providers.mistral import MistralProvider
 
 from anpe.config import settings
-from anpe.prospect.summarize import _SYSTEM, SummarizeResult
+from anpe.steps.summarize_fn import _SYSTEM, SummarizeResult
 
 MODELS = [
     "ministral-8b-2512",

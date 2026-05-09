@@ -27,15 +27,15 @@ uv run mypy anpe/  # type check
 
 ```
 anpe/
-├── agent.py          # pydantic-ai agent (singleton)
 ├── cli.py            # click CLI entry point
 ├── config.py         # pydantic-settings (.env)
 ├── profile.py        # user search profile read/write
-├── tools/
-│   ├── geo_api.py    # geocoding
-│   └── naf.py        # NAF code search
-└── data/
-    └── naf_codes.csv
+├── clients/          # external API wrappers (SIREN, DDG)
+├── engine/           # orchestration: queue, runner, vault, rate gate
+├── steps/            # ANPE business logic: step classes (*_step.py)
+│   │                 # and pure domain functions (*_fn.py)
+│   └── bootstrap/    # company listing pipeline
+└── tools/            # NAF codes, geocoding
 tests/
 docs/
 ├── specs/            # vision, design, usage examples

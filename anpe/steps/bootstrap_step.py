@@ -5,11 +5,11 @@ from __future__ import annotations
 import hashlib
 from pathlib import Path
 
-from anpe.bootstrap.pipeline import rows_to_jsonl_bytes, run as _pipeline_run
+from anpe.steps.bootstrap.pipeline import rows_to_jsonl_bytes, run as _pipeline_run
 from anpe.config import USER_DATA_DIR
 from anpe.engine.queue import Queue
-from anpe.engine.steps import api_throttles
-from anpe.engine.steps.base import Candidate, Log
+from anpe.steps import api_throttles
+from anpe.engine.base import Candidate, Log
 from anpe.engine.vault import Vault
 
 _PROFILE_PATH = USER_DATA_DIR / "user_profile.yaml"

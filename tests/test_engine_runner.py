@@ -11,7 +11,7 @@ from click.testing import CliRunner
 from anpe.cli import cli
 from anpe.engine.queue import Queue
 from anpe.engine.runner import Runner
-from anpe.engine.steps.base import Candidate, FatalError, RetryableError
+from anpe.engine.base import Candidate, FatalError, RetryableError
 from anpe.engine.vault import Vault
 
 

@@ -13,7 +13,7 @@ from pydantic_ai.providers.mistral import MistralProvider
 
 from anpe.config import settings
 
-from anpe.prospect.types import (
+from anpe.steps.types import (
     FetchTarget,
     SummarizeResult,
 )  # noqa: F401  (re-exported)
