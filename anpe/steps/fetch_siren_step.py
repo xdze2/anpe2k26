@@ -12,8 +12,6 @@ from anpe.clients.errors import FetchNotFoundError, FetchRetryableError
 from anpe.steps.seed_fn import node_id_for
 
 _TOOL = "siren"
-_BOOTSTRAP_NODE = "_bootstrap"
-_BOOTSTRAP_STEP = "bootstrap"
 
 
 class FetchSirenStep:
@@ -24,8 +22,12 @@ class FetchSirenStep:
 
     def scan(self, queue: Queue, vault: Vault, count: int = 10, **_: object) -> list[Candidate]:
         """Return one Candidate per company in the latest bootstrap listing not yet fetched."""
-        listing_uri = _latest_bootstrap_listing_uri(queue)
-        if listing_uri is None:
+        events = queue.done_events("bootstrap", newest_first=True)
+        if not events:
+            return []
+        outputs = json.loads(events[0]["outputs"]) if isinstance(events[0]["outputs"], str) else events[0]["outputs"]
+        listing_uri = outputs.get("listing_uri")
+        if not listing_uri:
             return []
 
         listing_text = vault.load(listing_uri).decode()
@@ -75,14 +77,3 @@ class FetchSirenStep:
         log(f"saved → {uri}")
         return {"raw_uri": uri, "siren": siren}
 
-
-def _latest_bootstrap_listing_uri(queue: Queue) -> str | None:
-    """Return the listing_uri from the most recent successfully completed bootstrap run, or None."""
-    events = queue.node_history(_BOOTSTRAP_NODE, step=_BOOTSTRAP_STEP)
-    for ev in reversed(events):
-        if ev["event"] == "done" and ev.get("outputs"):
-            outputs = json.loads(ev["outputs"]) if isinstance(ev["outputs"], str) else ev["outputs"]
-            uri = outputs.get("listing_uri")
-            if uri:
-                return str(uri)
-    return None
