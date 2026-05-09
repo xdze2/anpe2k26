@@ -8,10 +8,11 @@ from pathlib import Path
 from anpe.config import USER_DATA_DIR
 
 _MAX_WORDS = 400
+_USER_DATA_DIR: Path = USER_DATA_DIR
 
 
 def _profile_dir() -> Path:
-    return USER_DATA_DIR
+    return _USER_DATA_DIR
 
 
 def active_profile_file() -> Path | None:
