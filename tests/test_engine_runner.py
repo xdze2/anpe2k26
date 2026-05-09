@@ -23,8 +23,8 @@ class _OkStep:
     name = "ok_step"
     version = "v1"
 
-    def scan(self, **_: object) -> list[Candidate]:
-        return []
+    def scan(self, **_: object):  # type: ignore[override]
+        return iter([])
 
     async def work(self, args: dict, vault: Vault, log) -> dict:  # type: ignore[type-arg]
         return {"result": args.get("value", "done")}
@@ -34,8 +34,8 @@ class _ErrorStep:
     name = "err_step"
     version = "v1"
 
-    def scan(self, **_: object) -> list[Candidate]:
-        return []
+    def scan(self, **_: object):  # type: ignore[override]
+        return iter([])
 
     async def work(self, args: dict, vault: Vault, log) -> dict:  # type: ignore[type-arg]
         raise RetryableError("retryable failure")
@@ -45,8 +45,8 @@ class _FatalStep:
     name = "fatal_step"
     version = "v1"
 
-    def scan(self, **_: object) -> list[Candidate]:
-        return []
+    def scan(self, **_: object):  # type: ignore[override]
+        return iter([])
 
     async def work(self, args: dict, vault: Vault, log) -> dict:  # type: ignore[type-arg]
         raise FatalError("fatal failure")

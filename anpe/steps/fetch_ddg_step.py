@@ -7,6 +7,7 @@ import json
 from anpe.engine.queue import Queue
 from anpe.steps import api_throttles
 from anpe.engine.base import Candidate, FatalError, Log, RetryableError
+from collections.abc import Iterator
 from anpe.engine.vault import Vault
 from anpe.clients.ddg import ddg_search
 from anpe.clients.errors import FetchBlockedError, FetchNotFoundError, FetchRetryableError
@@ -22,12 +23,9 @@ class FetchDdgStep:
     description = "Fetch raw DDG search results for companies sourced from completed fetch_siren runs."
     rate_gate = api_throttles.DDG
 
-    def scan(self, queue: Queue, vault: Vault, count: int = 10, **_: object) -> list[Candidate]:
+    def scan(self, queue: Queue, vault: Vault, **_: object) -> Iterator[Candidate]:
         """Return one Candidate per completed fetch_siren run not yet fetched via DDG."""
-        candidates: list[Candidate] = []
         for ev in queue.done_events(_SIREN_STEP):
-            if len(candidates) >= count:
-                break
             outputs = json.loads(ev["outputs"]) if isinstance(ev["outputs"], str) else ev["outputs"]
             siren_uri = outputs.get("raw_uri")
             if not siren_uri:
@@ -45,13 +43,12 @@ class FetchDdgStep:
             }
             if queue.is_done(self.name, self.version, args):
                 continue
-            candidates.append(Candidate(
+            yield Candidate(
                 step=self.name,
                 node_id=node_id,
                 args=args,
                 context={"nom_complet": siren_raw.get("nom_complet", "")},
-            ))
-        return candidates
+            )
 
     async def work(self, args: dict, vault: Vault, log: Log) -> dict:  # type: ignore[type-arg]
         node_id = args["node_id"]

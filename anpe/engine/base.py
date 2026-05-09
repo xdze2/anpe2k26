@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass, field
-from typing import Callable, Protocol
+from typing import Callable, Iterator, Protocol
 
 
 class RetryableError(Exception):
@@ -34,6 +34,6 @@ class Step(Protocol):
     description: str
     rate_gate: RateGate | NoGate
 
-    def scan(self, queue: Queue, vault: Vault, **filter_flags: object) -> list[Candidate]: ...
+    def scan(self, queue: Queue, vault: Vault, **filter_flags: object) -> Iterator[Candidate]: ...
 
     async def work(self, args: dict, vault: Vault, log: Log) -> dict: ...  # type: ignore[type-arg]

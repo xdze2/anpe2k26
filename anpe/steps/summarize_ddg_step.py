@@ -7,6 +7,7 @@ import json
 from anpe.engine.queue import Queue
 from anpe.steps import api_throttles
 from anpe.engine.base import Candidate, Log
+from collections.abc import Iterator
 from anpe.engine.vault import Vault
 from anpe.steps.summarize_fn import SUMMARIZE_VERSION, ddg_summarize
 from anpe.tools.naf import _load_csv_index
@@ -21,9 +22,8 @@ class SummarizeDdgStep:
     description = "Summarize raw DDG fetch results with an LLM and extract follow-up targets."
     rate_gate = api_throttles.MISTRAL
 
-    def scan(self, queue: Queue, _vault: Vault, **_: object) -> list[Candidate]:
+    def scan(self, queue: Queue, _vault: Vault, **_: object) -> Iterator[Candidate]:
         """Return one Candidate per completed fetch_ddg run not yet summarized."""
-        candidates: list[Candidate] = []
         for ev in queue.done_events(_DDG_STEP):
             outputs = json.loads(ev["outputs"]) if isinstance(ev["outputs"], str) else ev["outputs"]
             raw_ddg_uri = outputs.get("raw_uri")
@@ -40,12 +40,11 @@ class SummarizeDdgStep:
             }
             if queue.is_done(self.name, self.version, args):
                 continue
-            candidates.append(Candidate(
+            yield Candidate(
                 step=self.name,
                 node_id=node_id,
                 args=args,
-            ))
-        return candidates
+            )
 
     async def work(self, args: dict, vault: Vault, log: Log) -> dict:  # type: ignore[type-arg]
         node_id = args["node_id"]

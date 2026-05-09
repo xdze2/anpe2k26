@@ -7,6 +7,7 @@ import json
 from anpe.engine.queue import Queue
 from anpe.steps import api_throttles
 from anpe.engine.base import Candidate, FatalError, Log, RetryableError
+from collections.abc import Iterator
 from anpe.engine.vault import Vault
 from anpe.clients.errors import FetchNotFoundError, FetchRetryableError
 from anpe.steps.seed_fn import node_id_for
@@ -20,21 +21,18 @@ class FetchSirenStep:
     description = "Fetch company registry data from the Recherche Entreprises API for each company in the bootstrap listing."
     rate_gate = api_throttles.SIREN
 
-    def scan(self, queue: Queue, vault: Vault, count: int = 10, **_: object) -> list[Candidate]:
+    def scan(self, queue: Queue, vault: Vault, **_: object) -> Iterator[Candidate]:
         """Return one Candidate per company in the latest bootstrap listing not yet fetched."""
         events = queue.done_events("bootstrap", newest_first=True)
         if not events:
-            return []
+            return
         outputs = json.loads(events[0]["outputs"]) if isinstance(events[0]["outputs"], str) else events[0]["outputs"]
         listing_uri = outputs.get("listing_uri")
         if not listing_uri:
-            return []
+            return
 
         listing_text = vault.load(listing_uri).decode()
-        candidates: list[Candidate] = []
         for line in listing_text.splitlines():
-            if len(candidates) >= count:
-                break
             line = line.strip()
             if not line:
                 continue
@@ -48,13 +46,12 @@ class FetchSirenStep:
             }
             if queue.is_done(self.name, self.version, args):
                 continue
-            candidates.append(Candidate(
+            yield Candidate(
                 step=self.name,
                 node_id=node_id,
                 args=args,
                 context={"nom_complet": row["nom_complet"], "siren": row["siren"]},
-            ))
-        return candidates
+            )
 
     async def work(self, args: dict, vault: Vault, log: Log) -> dict:  # type: ignore[type-arg]
         from anpe.clients.siren import siren_fetch

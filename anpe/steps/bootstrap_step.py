@@ -8,6 +8,7 @@ from anpe.steps.bootstrap.pipeline import rows_to_jsonl_bytes, run as _pipeline_
 from anpe.engine.queue import Queue
 from anpe.steps import api_throttles
 from anpe.engine.base import Candidate, Log
+from collections.abc import Iterator
 from anpe.engine.vault import Vault
 
 _SEED_URI = "seed_query.yaml"
@@ -21,14 +22,14 @@ class BootstrapStep:
 
     def scan(
         self, queue: Queue, vault: Vault, refresh: bool = False, **_: object
-    ) -> list[Candidate]:
+    ) -> Iterator[Candidate]:
         """Emit one candidate keyed on the profile's content hash.
 
         Suppressed if a done event already exists for these args, unless
         refresh=True (which forces re-emission for use with put --force).
         """
         if not vault.exists(_SEED_URI):
-            return []
+            return
         profile_bytes = vault.load(_SEED_URI)
         profile_hash = hashlib.sha256(profile_bytes).hexdigest()[:16]
         args = {
@@ -37,8 +38,8 @@ class BootstrapStep:
             "refresh": False,
         }
         if not refresh and queue.is_done(self.name, self.version, args):
-            return []
-        return [Candidate(step=self.name, node_id=None, args=args)]
+            return
+        yield Candidate(step=self.name, node_id=None, args=args)
 
     async def work(self, args: dict, vault: Vault, log: Log) -> dict:  # type: ignore[type-arg]
         profile_path = vault.root / args["seed_uri"]

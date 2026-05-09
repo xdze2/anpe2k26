@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import asyncio
+import itertools
 import json
 import sys
 
@@ -429,7 +430,7 @@ def cmd_scan(
     from anpe.engine.vault import Vault
     queue = Queue()
     vault = Vault()
-    candidates: list[Candidate] = step_obj.scan(queue, vault, **flags)
+    candidates = list(step_obj.scan(queue, vault, **flags))
     queue.close()
 
     for c in candidates:
@@ -524,16 +525,10 @@ def cmd_run(step_name: str | None, budget: int | None) -> None:
 
 @cli.command("step")
 @click.argument("step_name", metavar="STEP", type=click.Choice(_KNOWN_STEPS))
-@click.option("--min-score", default=None, help="(eval) minimum score")
-@click.option("--exclude-reaction", default=None, help="(eval) skip nodes with this reaction")
-@click.option("--naf-prefix", default=None, help="(summarize_ddg) filter by NAF code prefix")
 @click.option("--refresh", is_flag=True, default=False, help="(bootstrap) invalidate API cache and re-fetch.")
 @click.option("--budget", default=None, type=int, help="Maximum items to run.")
 def cmd_step(
     step_name: str,
-    min_score: str | None,
-    exclude_reaction: str | None,
-    naf_prefix: str | None,
     refresh: bool,
     budget: int | None,
 ) -> None:
@@ -543,8 +538,6 @@ def cmd_step(
     anpe step bootstrap
     anpe step bootstrap --refresh
     anpe step eval
-    anpe step eval --min-score=maybe --budget=10
-    anpe step summarize_ddg --naf-prefix=62
     """
     from anpe.engine.queue import Queue
     from anpe.engine.runner import Runner
@@ -553,41 +546,25 @@ def cmd_step(
     step_obj = _STEPS[step_name]
 
     flags: dict[str, object] = {}
-    if min_score is not None:
-        flags["min_score"] = min_score
-    if exclude_reaction is not None:
-        flags["exclude_reaction"] = exclude_reaction
-    if naf_prefix is not None:
-        flags["naf_prefix"] = naf_prefix
     if refresh:
         flags["refresh"] = refresh
 
     queue = Queue()
     vault = Vault()
-    candidates = step_obj.scan(queue, vault, **flags)
-
-    if not candidates:
-        console.print(" [dim]No candidates.[/]")
-        queue.close()
-        return
-
-    console.print(f" [dim]{len(candidates)} candidate(s) found.[/]")
-
     queued = 0
+    seen = 0
     version = step_obj.version
     force = bool(flags.get("refresh"))
-    for c in candidates:
+    scan = step_obj.scan(queue, vault, **flags)
+    for c in (scan if budget is None else itertools.islice(scan, budget)):
+        seen += 1
         before = len(queue.pending(step_name))
         queue.put(c.node_id, step_name, version, c.args, force=force)
         after = len(queue.pending(step_name))
         if after > before:
             queued += 1
 
-    console.print(f" [dim]{queued} item(s) queued ({len(candidates) - queued} already present).[/]")
-
-    if queued == 0 and not queue.stale_claims(step_name):
-        queue.close()
-        return
+    console.print(f" [dim]{queued} item(s) queued ({seen - queued} already present).[/]")
 
     runner = Runner(list(_STEPS.values()), queue, vault)
 

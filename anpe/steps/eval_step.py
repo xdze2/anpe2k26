@@ -7,6 +7,7 @@ import json
 from anpe.engine.queue import Queue
 from anpe.steps import api_throttles
 from anpe.engine.base import Candidate, Log
+from collections.abc import Iterator
 from anpe.engine.vault import Vault
 from anpe.steps.eval_fn import EVAL_VERSION, llm_eval
 
@@ -25,16 +26,15 @@ class EvalStep:
         queue: Queue,
         vault: Vault,
         **_: object,
-    ) -> list[Candidate]:
+    ) -> Iterator[Candidate]:
         """Return one Candidate per completed summarize_ddg run not yet evaluated.
 
         # TODO: add min_score filter (requires reading prior eval done events)
         # TODO: add exclude_reaction filter (requires reactions stored in queue)
         """
         if not vault.exists(_PROFILE_URI):
-            return []
+            return
 
-        candidates: list[Candidate] = []
         for ev in queue.done_events(_SUMMARIZE_STEP):
             outputs = json.loads(ev["outputs"]) if isinstance(ev["outputs"], str) else ev["outputs"]
             summary_uri = outputs.get("summary_uri")
@@ -51,14 +51,12 @@ class EvalStep:
                 continue
 
             # TODO: surface score, reaction, naf in context for future filter flags
-            candidates.append(Candidate(
+            yield Candidate(
                 step=self.name,
                 node_id=node_id,
                 args=args,
                 context={},
-            ))
-
-        return candidates
+            )
 
     async def work(self, args: dict, vault: Vault, log: Log) -> dict:  # type: ignore[type-arg]
         node_id = args["node_id"]

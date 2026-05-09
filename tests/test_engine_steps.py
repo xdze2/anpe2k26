@@ -6,6 +6,7 @@ All node fixtures are created in tmp_path so nothing touches user_data/.
 
 from __future__ import annotations
 
+import itertools
 import json
 from pathlib import Path
 
@@ -104,18 +105,18 @@ class TestFetchSirenStepScan:
 
     def test_empty_when_no_bootstrap(self) -> None:
         from anpe.steps.fetch_siren_step import FetchSirenStep
-        assert FetchSirenStep().scan(self.queue, self.vault) == []
+        assert list(FetchSirenStep().scan(self.queue, self.vault)) == []
 
     def test_bootstrap_not_done_returns_empty(self) -> None:
         from anpe.steps.fetch_siren_step import FetchSirenStep
         self.queue.put("_bootstrap", "bootstrap", "v2", {"profile_hash": "abc"})
-        assert FetchSirenStep().scan(self.queue, self.vault) == []
+        assert list(FetchSirenStep().scan(self.queue, self.vault)) == []
 
     def test_listing_emits_candidate(self) -> None:
         from anpe.steps.fetch_siren_step import FetchSirenStep
         listing_uri = self._put_bootstrap_done('{"nom_complet": "Acme SA", "siren": "123456789"}\n')
 
-        candidates = FetchSirenStep().scan(self.queue, self.vault)
+        candidates = list(FetchSirenStep().scan(self.queue, self.vault))
         assert len(candidates) == 1
         assert candidates[0].args["target"] == "123456789"
         assert candidates[0].args["listing_uri"] == listing_uri
@@ -125,7 +126,7 @@ class TestFetchSirenStepScan:
         self._put_bootstrap_done('{"nom_complet": "Acme SA", "siren": "123456789"}\n')
 
         step = FetchSirenStep()
-        candidates = step.scan(self.queue, self.vault)
+        candidates = list(step.scan(self.queue, self.vault))
         assert len(candidates) == 1
 
         c = candidates[0]
@@ -133,7 +134,7 @@ class TestFetchSirenStepScan:
         uid = list(self.queue.pending(step.name))[0].uid
         self.queue.mark_done(uid, step.name, c.node_id, {"raw_uri": "some/uri", "siren": "123456789"})
 
-        assert step.scan(self.queue, self.vault) == []
+        assert list(step.scan(self.queue, self.vault)) == []
 
     def test_count_caps_candidates(self) -> None:
         from anpe.steps.fetch_siren_step import FetchSirenStep
@@ -142,7 +143,7 @@ class TestFetchSirenStepScan:
             for i in range(5)
         )
         self._put_bootstrap_done(lines + "\n")
-        assert len(FetchSirenStep().scan(self.queue, self.vault, count=3)) == 3
+        assert len(list(itertools.islice(FetchSirenStep().scan(self.queue, self.vault), 3))) == 3
 
     def test_multiple_companies_all_emitted(self) -> None:
         from anpe.steps.fetch_siren_step import FetchSirenStep
@@ -151,7 +152,7 @@ class TestFetchSirenStepScan:
             for i in range(3)
         )
         self._put_bootstrap_done(lines + "\n")
-        assert len(FetchSirenStep().scan(self.queue, self.vault)) == 3
+        assert len(list(FetchSirenStep().scan(self.queue, self.vault))) == 3
 
 
 # ---------------------------------------------------------------------------
@@ -175,13 +176,13 @@ class TestFetchDdgStepScan:
 
     def test_empty_when_no_siren_done(self) -> None:
         from anpe.steps.fetch_ddg_step import FetchDdgStep
-        assert FetchDdgStep().scan(self.queue, self.vault) == []
+        assert list(FetchDdgStep().scan(self.queue, self.vault)) == []
 
     def test_siren_done_emits_candidate(self) -> None:
         from anpe.steps.fetch_ddg_step import FetchDdgStep
         siren_uri = self._put_siren_done()
 
-        candidates = FetchDdgStep().scan(self.queue, self.vault)
+        candidates = list(FetchDdgStep().scan(self.queue, self.vault))
         assert len(candidates) == 1
         assert candidates[0].args["siren_uri"] == siren_uri
         assert candidates[0].args["target"] == "Acme entreprise informatique"
@@ -191,7 +192,7 @@ class TestFetchDdgStepScan:
         self._put_siren_done()
 
         step = FetchDdgStep()
-        candidates = step.scan(self.queue, self.vault)
+        candidates = list(step.scan(self.queue, self.vault))
         assert len(candidates) == 1
 
         c = candidates[0]
@@ -199,19 +200,19 @@ class TestFetchDdgStepScan:
         uid = list(self.queue.pending(step.name))[0].uid
         self.queue.mark_done(uid, step.name, c.node_id, {"raw_uri": "some/raw_ddg.json"})
 
-        assert step.scan(self.queue, self.vault) == []
+        assert list(step.scan(self.queue, self.vault)) == []
 
     def test_count_caps_candidates(self) -> None:
         from anpe.steps.fetch_ddg_step import FetchDdgStep
         for i in range(5):
             self._put_siren_done(node_id=f"co_{i}_10000000{i}", siren=f"10000000{i}")
-        assert len(FetchDdgStep().scan(self.queue, self.vault, count=3)) == 3
+        assert len(list(itertools.islice(FetchDdgStep().scan(self.queue, self.vault), 3))) == 3
 
     def test_multiple_companies_all_emitted(self) -> None:
         from anpe.steps.fetch_ddg_step import FetchDdgStep
         for i in range(3):
             self._put_siren_done(node_id=f"co_{i}_10000000{i}", siren=f"10000000{i}")
-        assert len(FetchDdgStep().scan(self.queue, self.vault)) == 3
+        assert len(list(FetchDdgStep().scan(self.queue, self.vault))) == 3
 
 
 # ---------------------------------------------------------------------------
@@ -237,13 +238,13 @@ class TestSummarizeDdgStepScan:
 
     def test_empty_when_no_fetch_ddg_done(self) -> None:
         from anpe.steps.summarize_ddg_step import SummarizeDdgStep
-        assert SummarizeDdgStep().scan(self.queue, self.vault) == []
+        assert list(SummarizeDdgStep().scan(self.queue, self.vault)) == []
 
     def test_fetch_ddg_done_emits_candidate(self) -> None:
         from anpe.steps.summarize_ddg_step import SummarizeDdgStep
         siren_uri, raw_ddg_uri = self._put_fetch_ddg_done()
 
-        candidates = SummarizeDdgStep().scan(self.queue, self.vault)
+        candidates = list(SummarizeDdgStep().scan(self.queue, self.vault))
         assert len(candidates) == 1
         assert candidates[0].node_id == "acme_sa_123456789"
         assert candidates[0].args["raw_ddg_uri"] == raw_ddg_uri
@@ -254,7 +255,7 @@ class TestSummarizeDdgStepScan:
         self._put_fetch_ddg_done()
 
         step = SummarizeDdgStep()
-        candidates = step.scan(self.queue, self.vault)
+        candidates = list(step.scan(self.queue, self.vault))
         assert len(candidates) == 1
 
         c = candidates[0]
@@ -262,13 +263,13 @@ class TestSummarizeDdgStepScan:
         uid = list(self.queue.pending(step.name))[0].uid
         self.queue.mark_done(uid, step.name, c.node_id, {"status": "ok"})
 
-        assert step.scan(self.queue, self.vault) == []
+        assert list(step.scan(self.queue, self.vault)) == []
 
     def test_multiple_nodes_all_emitted(self) -> None:
         from anpe.steps.summarize_ddg_step import SummarizeDdgStep
         for i in range(3):
             self._put_fetch_ddg_done(node_id=f"co_{i}")
-        assert len(SummarizeDdgStep().scan(self.queue, self.vault)) == 3
+        assert len(list(SummarizeDdgStep().scan(self.queue, self.vault))) == 3
 
 
 # ---------------------------------------------------------------------------
@@ -301,13 +302,13 @@ class TestEvalStepScan:
     def test_no_profile_returns_empty(self) -> None:
         from anpe.steps.eval_step import EvalStep
         self._put_summarize_ddg_done()
-        assert EvalStep().scan(self.queue, self.vault) == []
+        assert list(EvalStep().scan(self.queue, self.vault)) == []
 
     def test_summarize_done_is_candidate(self) -> None:
         from anpe.steps.eval_step import EvalStep
         self._seed_profile()
         summary_uri = self._put_summarize_ddg_done()
-        candidates = EvalStep().scan(self.queue, self.vault)
+        candidates = list(EvalStep().scan(self.queue, self.vault))
         assert len(candidates) == 1
         assert candidates[0].node_id == "acme_sa_123456789"
         assert candidates[0].args["summary_uri"] == summary_uri
@@ -316,7 +317,7 @@ class TestEvalStepScan:
     def test_no_summarize_done_returns_empty(self) -> None:
         from anpe.steps.eval_step import EvalStep
         self._seed_profile()
-        assert EvalStep().scan(self.queue, self.vault) == []
+        assert list(EvalStep().scan(self.queue, self.vault)) == []
 
     def test_summarize_done_missing_summary_uri_skipped(self) -> None:
         from anpe.steps.eval_step import EvalStep
@@ -325,7 +326,7 @@ class TestEvalStepScan:
         self.queue.put("acme_sa_123456789", "summarize_ddg", "v_test", args)
         uid = list(self.queue.pending("summarize_ddg"))[0].uid
         self.queue.mark_done(uid, "summarize_ddg", "acme_sa_123456789", {"status": "ok"})
-        assert EvalStep().scan(self.queue, self.vault) == []
+        assert list(EvalStep().scan(self.queue, self.vault)) == []
 
     def test_already_evaled_not_a_candidate(self) -> None:
         from anpe.steps.eval_step import EvalStep
@@ -333,7 +334,7 @@ class TestEvalStepScan:
         summary_uri = self._put_summarize_ddg_done()
 
         step = EvalStep()
-        candidates = step.scan(self.queue, self.vault)
+        candidates = list(step.scan(self.queue, self.vault))
         assert len(candidates) == 1
 
         c = candidates[0]
@@ -341,11 +342,11 @@ class TestEvalStepScan:
         uid = list(self.queue.pending(step.name))[0].uid
         self.queue.mark_done(uid, step.name, c.node_id, {"score": "good"})
 
-        assert step.scan(self.queue, self.vault) == []
+        assert list(step.scan(self.queue, self.vault)) == []
 
     def test_multiple_nodes_all_emitted(self) -> None:
         from anpe.steps.eval_step import EvalStep
         self._seed_profile()
         for i in range(3):
             self._put_summarize_ddg_done(node_id=f"co_{i}")
-        assert len(EvalStep().scan(self.queue, self.vault)) == 3
+        assert len(list(EvalStep().scan(self.queue, self.vault))) == 3
