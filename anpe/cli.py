@@ -5,7 +5,6 @@ from __future__ import annotations
 import asyncio
 import json
 import sys
-from typing import TYPE_CHECKING
 
 import click
 from rich.console import Console
@@ -15,9 +14,6 @@ from rich.rule import Rule
 from rich.text import Text
 
 from anpe.node_dir import NodeDir
-
-if TYPE_CHECKING:
-    from anpe.prospect.pipeline import StepLog
 
 console = Console()
 
@@ -41,23 +37,6 @@ def cli() -> None:
 def prospect_group() -> None:
     """Research and enrich prospected companies."""
 
-
-def _print_step_log(log: StepLog) -> None:
-    status_style = {
-        "ok": "green",
-        "not_relevant": "red",
-        "no_data": "yellow",
-        "fetch_error": "red",
-        "summarize_error": "red",
-        "empty_queue": "dim",
-    }.get(log.status, "white")
-
-    console.print(f" [dim]node[/]   [bold]{log.node_id}[/]")
-    if log.tool:
-        console.print(f" [dim]fetched[/] [{log.tool}] {log.target}")
-    console.print(f" [dim]status[/] [{status_style}]{log.status}[/]")
-    for tool, target in log.new_targets:
-        console.print(f" [dim]queued[/] [{tool}] {target}")
 
 
 @prospect_group.command("list")
@@ -126,58 +105,6 @@ def prospect_list() -> None:
             f"{pending_tag}{reaction_tag}{eval_tag}"
         )
 
-
-@prospect_group.command("seed")
-@click.option("--count", default=10, show_default=True, help="Number of new nodes to create.")
-def prospect_seed(count: int) -> None:
-    """Pick N new companies from the listing and create prospect nodes.
-
-    Reads user_data/company_listing.csv, skips companies that already have a
-    node, and creates up to COUNT new nodes each with an initial DDG target.
-
-    Example: anpe prospect seed --count 5
-    """
-    from anpe.config import USER_DATA_DIR
-    from anpe.prospect.seed import seed_from_listing
-
-    csv_path = USER_DATA_DIR / "company_listing.csv"
-    if not csv_path.exists():
-        console.print(f" [bold red]Error[/] listing not found: {csv_path}")
-        return
-
-    created = seed_from_listing(csv_path, count)
-
-    if not created:
-        console.print(" [dim]No new companies to seed (all already have nodes, or listing is empty).[/]")
-        return
-
-    for node_id in created:
-        console.print(f" [green]created[/] [bold]{node_id}[/]")
-    console.print(f"\n [dim]{len(created)} node(s) created.[/]")
-
-
-@prospect_group.command("add_target")
-@click.argument("node_id")
-@click.argument("tool")
-@click.argument("keyword")
-def add_target(node_id: str, tool: str, keyword: str) -> None:
-    """Append a fetch target to a node's queue.
-
-    Example: anpe prospect add_target acme ddg "Acme Corp France"
-    """
-    from anpe.prospect.registry import FETCH_TOOLS
-
-    if tool not in FETCH_TOOLS:
-        raise click.BadParameter(
-            f"must be one of {list(FETCH_TOOLS)}", param_hint="TOOL"
-        )
-    node = NodeDir(node_id)
-    if not node.exists():
-        console.print(f" [bold red]Error[/] node {node_id!r} not found -- use 'prospect seed' to create nodes")
-        return
-    node.append_target(tool, keyword)
-    console.print(f" [dim]node[/] [bold]{node_id}[/]")
-    console.print(f" [dim]queued[/] [{tool}] {keyword}")
 
 
 @prospect_group.command("status")
@@ -305,106 +232,6 @@ def prospect_review() -> None:
 
     run_review()
 
-
-@prospect_group.command("resummarize")
-@click.argument("node_ids", nargs=-1, metavar="[NODE_ID]...")
-@click.option("--all-nodes", is_flag=True, help="Check all existing nodes.")
-def prospect_resummarize(node_ids: tuple[str, ...], all_nodes: bool) -> None:
-    """Queue stale summaries for re-summarization on the next run.
-
-    Scans nodes for summarize_done entries whose summarize_version no longer
-    matches the current constant (model or prompt changed). Appends a
-    resummarize event -- the next 'anpe run' will re-summarize them
-    without re-fetching.
-
-    \b
-    anpe prospect resummarize                  check all nodes
-    anpe prospect resummarize node1 node2      check specific nodes
-    """
-    from anpe.node_dir import all_node_ids_by_ctime
-    from anpe.prospect.registry import FETCH_TOOLS
-
-    if node_ids and all_nodes:
-        raise click.UsageError("NODE_IDs and --all-nodes are mutually exclusive.")
-
-    ids = list(node_ids) if node_ids else all_node_ids_by_ctime()
-
-    if not ids:
-        console.print(" [dim]No nodes found.[/]")
-        return
-
-    tool_versions = {slug: tool.version for slug, tool in FETCH_TOOLS.items()}
-
-    total = 0
-    for node_id in ids:
-        node = NodeDir(node_id)
-        if not node.exists():
-            console.print(f" [bold red]Error[/] node {node_id!r} not found")
-            continue
-        stale = node.get_stale_summarize_uids(tool_versions)
-        for uid in stale:
-            node.mark_resummarize(uid, reason="version_change")
-            console.print(f" [dim]node[/] [bold]{node_id}[/]  [yellow]resummarize[/] uid={uid}")
-            total += 1
-
-    if total == 0:
-        console.print(" [dim]All summaries are up to date.[/]")
-    else:
-        console.print(f"\n [dim]{total} uid(s) queued for re-summarization.[/]")
-
-
-@prospect_group.command("reeval")
-@click.argument("node_ids", nargs=-1, metavar="[NODE_ID]...")
-@click.option("--all-nodes", is_flag=True, help="Check all existing nodes.")
-def prospect_reeval(node_ids: tuple[str, ...], all_nodes: bool) -> None:
-    """Sync the eval queue: enqueue any summarized node that has no current eval.
-
-    Covers two cases:
-    - Never enqueued (summarized before eval existed, or eval was never run).
-    - Stale (last eval used an older profile or eval_version).
-
-    Appends a new eval put for each affected node. The next 'anpe run' picks them up.
-
-    \b
-    anpe prospect reeval                  check all nodes
-    anpe prospect reeval node1 node2      check specific nodes
-    """
-    from anpe.node_dir import all_node_ids_by_ctime
-    from anpe.profile import active_profile_file
-    from anpe.prospect.eval import EVAL_VERSION
-
-    if node_ids and all_nodes:
-        raise click.UsageError("NODE_IDs and --all-nodes are mutually exclusive.")
-
-    ids = list(node_ids) if node_ids else all_node_ids_by_ctime()
-
-    if not ids:
-        console.print(" [dim]No nodes found.[/]")
-        return
-
-    profile_path = active_profile_file()
-    if profile_path is None:
-        console.print(" [bold red]Error[/] no profile file found -- run 'anpe profile update' first")
-        return
-
-    total = 0
-    for node_id in ids:
-        node = NodeDir(node_id)
-        if not node.exists():
-            console.print(f" [bold red]Error[/] node {node_id!r} not found")
-            continue
-        sum_file = node.get_latest_sum_file()
-        if sum_file is None:
-            continue
-        if node.is_eval_stale(str(profile_path), EVAL_VERSION):
-            node.append_eval_put(f"summarize/{sum_file}", str(profile_path))
-            console.print(f" [dim]node[/] [bold]{node_id}[/]  [yellow]queued[/]")
-            total += 1
-
-    if total == 0:
-        console.print(" [dim]All evals are up to date.[/]")
-    else:
-        console.print(f"\n [dim]{total} node(s) queued for re-eval.[/]")
 
 
 @prospect_group.command("map")
