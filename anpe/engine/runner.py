@@ -8,7 +8,7 @@ from dataclasses import dataclass, field
 
 from anpe.engine.logger import StepLogger
 from anpe.engine.queue import Queue
-from anpe.engine.rate_gate import NoGate
+from anpe.engine.rate_gate import BudgetExhausted, NoGate
 from anpe.engine.base import FatalError, RetryableError, Step
 from anpe.engine.vault import Vault
 
@@ -71,12 +71,11 @@ class Runner:
         self._sweep_stale(step_name)
 
         while True:
-
+            # Single atomic check: enforce item-count budget and snapshot skip_uids
+            # together so no other worker can slip in between.
             async with self._lock:
                 if budget is not None and len(self._results) >= budget:
                     return
-
-            async with self._lock:
                 skip_uids = set(self._attempted)
 
             item = self._queue.claim(step_name, self._worker_id, skip_uids=skip_uids)
@@ -101,6 +100,8 @@ class Runner:
                 log_path = self._vault.root / item.step / f"{item.uid[:8]}.log"
             logger = StepLogger(log_path)
             gate = getattr(step, "rate_gate", NoGate())
+            budget_exhausted = False
+            result: RunResult | None = None
             try:
                 await gate.acquire()
                 outputs = await step.work(item.args, self._vault, logger)
@@ -109,6 +110,10 @@ class Runner:
                     uid=item.uid, node_id=item.node_id, step=step_name,
                     status="done", outputs=outputs,
                 )
+            except BudgetExhausted:
+                # Gate budget spent — leave item retryable and stop this worker cleanly.
+                self._queue.mark_error(item.uid, step_name, item.node_id, "budget exhausted", retryable=True)
+                budget_exhausted = True
             except asyncio.CancelledError:
                 raise
             except RetryableError as e:
@@ -128,8 +133,12 @@ class Runner:
                 async with self._lock:
                     self._active -= 1
 
-            async with self._lock:
-                self._results.append(result)
+            if budget_exhausted:
+                return
+
+            if result is not None:
+                async with self._lock:
+                    self._results.append(result)
 
     def _sweep_stale(self, step_name: str) -> None:
         for stale in self._queue.stale_claims(step_name, CLAIM_TIMEOUT_S):

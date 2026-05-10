@@ -508,22 +508,48 @@ def cmd_put() -> None:
     console.print(f"\n [dim]{total} item(s) queued, {skipped} already present.[/]")
 
 
+def _apply_gate_budgets(gate_budget: tuple[str, ...]) -> None:
+    """Parse 'name=N' strings and set budgets on the matching gates in api_throttles."""
+    from anpe.steps.api_throttles import DDG, MISTRAL, SIREN
+
+    _gates = {"mistral": MISTRAL, "ddg": DDG, "siren": SIREN}
+    for spec in gate_budget:
+        if "=" not in spec:
+            raise click.BadParameter(f"expected 'name=N', got '{spec}'", param_hint="--gate-budget")
+        name, _, raw = spec.partition("=")
+        if name not in _gates:
+            raise click.BadParameter(
+                f"unknown gate '{name}', choose from: {', '.join(_gates)}", param_hint="--gate-budget"
+            )
+        try:
+            n = int(raw)
+        except ValueError:
+            raise click.BadParameter(f"N must be an integer, got '{raw}'", param_hint="--gate-budget")
+        _gates[name].set_budget(n)
+
+
 @cli.command("run")
 @click.option("--step", "step_name", default=None, type=click.Choice(_KNOWN_STEPS),
               help="Restrict to one step (default: all).")
-@click.option("--budget", default=None, type=int,
-              help="Maximum number of items to run.")
-def cmd_run(step_name: str | None, budget: int | None) -> None:
+@click.option("--gate-budget", multiple=True, metavar="NAME=N",
+              help="Cap calls through a named gate, e.g. --gate-budget mistral=50. Repeatable.")
+@click.option("--max-items", default=None, type=int,
+              help="Hard cap on total items processed (default: unlimited).")
+def cmd_run(step_name: str | None, gate_budget: tuple[str, ...], max_items: int | None) -> None:
     """Drain the queue and execute pending items.
 
     \b
-    anpe run                          drain all steps
-    anpe run --step=eval              only eval items
-    anpe run --step=fetch_ddg --budget=5
+    anpe run                                    drain all steps
+    anpe run --step=eval                        only eval items
+    anpe run --gate-budget mistral=50           stop after 50 Mistral calls
+    anpe run --gate-budget mistral=50 --gate-budget ddg=200
+    anpe run --max-items=10                     hard cap on items processed
     """
     from anpe.engine.queue import Queue
     from anpe.engine.runner import Runner
     from anpe.engine.vault import Vault
+
+    _apply_gate_budgets(gate_budget)
 
     queue = Queue()
     vault = Vault()
@@ -532,7 +558,7 @@ def cmd_run(step_name: str | None, budget: int | None) -> None:
     _STATUS_STYLE = {"done": "green", "error_retry": "yellow", "error_abort": "red"}
 
     async def _run() -> None:
-        results = await runner.run_until_empty(step_name=step_name, budget=budget)
+        results = await runner.run_until_empty(step_name=step_name, budget=max_items)
         for r in results:
             style = _STATUS_STYLE.get(r.status, "white")
             console.print(f" [{style}]{r.status}[/]  {r.step}  {r.node_id}  [dim]{r.uid}[/]")
@@ -547,22 +573,28 @@ def cmd_run(step_name: str | None, budget: int | None) -> None:
 @cli.command("step")
 @click.argument("step_name", metavar="STEP", type=click.Choice(_KNOWN_STEPS))
 @click.option("--refresh", is_flag=True, default=False, help="(bootstrap) invalidate API cache and re-fetch.")
-@click.option("--budget", default=None, type=int, help="Maximum items to run.")
+@click.option("--max-items", default=None, type=int, help="Cap on items scanned and run.")
+@click.option("--gate-budget", multiple=True, metavar="NAME=N",
+              help="Cap calls through a named gate, e.g. --gate-budget mistral=50. Repeatable.")
 def cmd_step(
     step_name: str,
     refresh: bool,
-    budget: int | None,
+    max_items: int | None,
+    gate_budget: tuple[str, ...],
 ) -> None:
     """Scan + put + run for one step in one command.
 
     \b
     anpe step bootstrap
     anpe step bootstrap --refresh
-    anpe step eval
+    anpe step eval --gate-budget mistral=50
+    anpe step eval --max-items=10
     """
     from anpe.engine.queue import Queue
     from anpe.engine.runner import Runner
     from anpe.engine.vault import Vault
+
+    _apply_gate_budgets(gate_budget)
 
     step_obj = _STEPS[step_name]
 
@@ -577,7 +609,7 @@ def cmd_step(
     version = step_obj.version
     force = bool(flags.get("refresh"))
     scan = step_obj.scan(queue, vault, **flags)
-    for c in (scan if budget is None else itertools.islice(scan, budget)):
+    for c in (scan if max_items is None else itertools.islice(scan, max_items)):
         seen += 1
         before = len(queue.pending(step_name))
         queue.put(c.node_id, step_name, version, c.args, force=force)
@@ -592,7 +624,7 @@ def cmd_step(
     _STATUS_STYLE = {"done": "green", "error_retry": "yellow", "error_abort": "red"}
 
     async def _run() -> None:
-        results = await runner.run_until_empty(step_name=step_name, budget=budget)
+        results = await runner.run_until_empty(step_name=step_name, budget=max_items)
         for r in results:
             style = _STATUS_STYLE.get(r.status, "white")
             console.print(f" [{style}]{r.status}[/]  {r.node_id}  [dim]{r.uid}[/]")

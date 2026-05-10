@@ -10,6 +10,7 @@ from click.testing import CliRunner
 
 from anpe.cli import cli
 from anpe.engine.queue import Queue
+from anpe.engine.rate_gate import BudgetExhausted, RateGate
 from anpe.engine.runner import Runner
 from anpe.engine.base import Candidate, FatalError, RetryableError
 from anpe.engine.vault import Vault
@@ -50,6 +51,21 @@ class _FatalStep:
 
     async def work(self, args: dict, vault: Vault, log) -> dict:  # type: ignore[type-arg]
         raise FatalError("fatal failure")
+
+
+class _GatedStep:
+    name = "gated_step"
+    version = "v1"
+    rate_gate: RateGate
+
+    def __init__(self, gate: RateGate) -> None:
+        self.rate_gate = gate
+
+    def scan(self, **_: object):  # type: ignore[override]
+        return iter([])
+
+    async def work(self, args: dict, vault: Vault, log) -> dict:  # type: ignore[type-arg]
+        return {"result": "ok"}
 
 
 # ---------------------------------------------------------------------------
@@ -125,6 +141,38 @@ async def test_runner_empty_queue_returns_immediately(tmp_queue: Queue, tmp_vaul
     runner = Runner([step], tmp_queue, tmp_vault)
     results = await runner.run_until_empty(step_name=step.name)
     assert results == []
+
+
+@pytest.mark.asyncio
+async def test_gate_budget_exhausted_stops_workers(tmp_queue: Queue, tmp_vault: Vault) -> None:
+    gate = RateGate(min_interval_s=0.0, name="test")
+    gate.set_budget(2)
+    step = _GatedStep(gate)
+    for i in range(5):
+        tmp_queue.put(f"node{i}", step.name, step.version, {"i": i})
+
+    runner = Runner([step], tmp_queue, tmp_vault, concurrency=1)
+    results = await runner.run_until_empty(step_name=step.name)
+
+    # Only 2 items should complete; the rest are left retryable in the queue.
+    assert len(results) == 2
+    assert all(r.status == "done" for r in results)
+    assert len(tmp_queue.pending(step.name)) == 3
+
+
+@pytest.mark.asyncio
+async def test_rate_gate_budget_raises_on_zero(tmp_queue: Queue, tmp_vault: Vault) -> None:
+    gate = RateGate(min_interval_s=0.0, name="test")
+    gate.set_budget(0)
+    with pytest.raises(BudgetExhausted):
+        await gate.acquire()
+
+
+@pytest.mark.asyncio
+async def test_rate_gate_no_budget_is_unlimited() -> None:
+    gate = RateGate(min_interval_s=0.0, name="test")
+    for _ in range(10):
+        await gate.acquire()  # should not raise
 
 
 # ---------------------------------------------------------------------------
@@ -231,7 +279,8 @@ def test_run_help() -> None:
     result = runner.invoke(cli, ["run", "--help"])
     assert result.exit_code == 0
     assert "--step" in result.output
-    assert "--budget" in result.output
+    assert "--gate-budget" in result.output
+    assert "--max-items" in result.output
 
 
 def test_step_help() -> None:
@@ -239,4 +288,5 @@ def test_step_help() -> None:
     result = runner.invoke(cli, ["step", "--help"])
     assert result.exit_code == 0
     assert "STEP" in result.output
-    assert "--budget" in result.output
+    assert "--gate-budget" in result.output
+    assert "--max-items" in result.output
