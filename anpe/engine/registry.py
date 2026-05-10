@@ -10,9 +10,10 @@ def _load() -> dict[str, Step]:
     from anpe.steps.eval_step import EvalStep
     from anpe.steps.fetch_ddg_step import FetchDdgStep
     from anpe.steps.fetch_siren_step import FetchSirenStep
+    from anpe.steps.review_step import ReviewStep
     from anpe.steps.summarize_ddg_step import SummarizeDdgStep
 
-    steps: list[Step] = [BootstrapStep(), FetchSirenStep(), FetchDdgStep(), SummarizeDdgStep(), EvalStep()]
+    steps: list[Step] = [BootstrapStep(), FetchSirenStep(), FetchDdgStep(), SummarizeDdgStep(), EvalStep(), ReviewStep()]
     return {s.name: s for s in steps}
 
 

@@ -1,4 +1,4 @@
-"""review step — interactive terminal review of eval-scored nodes."""
+"""review step — interactive terminal review of summarize_ddg nodes."""
 
 from __future__ import annotations
 
@@ -14,40 +14,32 @@ from anpe.steps import api_throttles
 from anpe.engine.base import Candidate, Log
 from anpe.engine.vault import Vault
 
-_EVAL_STEP = "eval"
+_SUMMARIZE_STEP = "summarize_ddg"
 _console = Console()
 
 
 class ReviewStep:
     name = "review"
     version = "v1"
-    description = "Interactive terminal review of eval-scored nodes."
+    description = "Interactive terminal review of summarize_ddg nodes."
     rate_gate = api_throttles.NONE
 
     def scan(
         self,
         queue: Queue,
         vault: Vault,
-        score: str | None = None,
         **_: object,
     ) -> list[Candidate]:
-        """Return one Candidate per eval-done node not yet reviewed.
-
-        score: optional filter, e.g. "good" or "maybe".
-        """
+        """Return one Candidate per summarize_ddg-done node not yet reviewed."""
         candidates: list[Candidate] = []
-        for ev in queue.done_events(_EVAL_STEP):
+        for ev in queue.done_events(_SUMMARIZE_STEP):
             outputs = json.loads(ev["outputs"]) if isinstance(ev["outputs"], str) else ev["outputs"]
-            eval_uri = outputs.get("eval_uri")
-            if not eval_uri:
+            summary_uri = outputs.get("summary_uri")
+            if not summary_uri:
                 continue
 
             node_id = ev["node_id"]
-            ev_score = outputs.get("score", "")
-            if score is not None and ev_score != score:
-                continue
-
-            args = {"node_id": node_id, "eval_uri": eval_uri}
+            args = {"node_id": node_id, "summary_uri": summary_uri}
             if queue.is_done(self.name, self.version, args):
                 continue
 
@@ -55,28 +47,18 @@ class ReviewStep:
                 step=self.name,
                 node_id=node_id,
                 args=args,
-                context={"score": ev_score},
             ))
 
         return candidates
 
     async def work(self, args: dict, vault: Vault, log: Log) -> dict:  # type: ignore[type-arg]
         node_id = args["node_id"]
-        eval_uri = args["eval_uri"]
+        summary_uri = args["summary_uri"]
 
-        eval_data = json.loads(vault.load(eval_uri).decode())
-        score = eval_data.get("score", "?")
-        fit = eval_data.get("fit", "")
-        summary_uri = eval_data.get("summary_uri", "")
+        sum_data = json.loads(vault.load(summary_uri).decode())
+        summary = sum_data.get("summary", "")
 
-        summary = ""
-        if summary_uri and vault.exists(summary_uri):
-            sum_data = json.loads(vault.load(summary_uri).decode())
-            summary = sum_data.get("summary", "")
-
-        _console.print(Rule(f"[bold]{node_id}[/]  score=[cyan]{score}[/]"))
-        if fit:
-            _console.print(f"  [dim]{fit}[/]")
+        _console.print(Rule(f"[bold]{node_id}[/]"))
         _console.print()
         if summary:
             _console.print(Padding(Markdown(summary), pad=(0, 4)))
@@ -88,12 +70,11 @@ class ReviewStep:
             _console.print("\n [dim]Interrupted.[/]")
             raise
 
-        log(f"score={score}  reaction={reaction!r}")
+        log(f"reaction={reaction!r}")
 
         payload = {
             "node_id": node_id,
-            "eval_uri": eval_uri,
-            "score": score,
+            "summary_uri": summary_uri,
             "reaction": reaction,
         }
         review_uri = vault.store(
