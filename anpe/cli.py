@@ -404,6 +404,17 @@ from anpe.engine.registry import STEPS as _STEPS  # noqa: E402
 _KNOWN_STEPS = list(_STEPS)
 
 
+def _is_sync(step: object) -> bool:
+    return not asyncio.iscoroutinefunction(getattr(step, "work", None))
+
+
+def _split_steps(names: list[str]) -> tuple[list, list]:
+    """Return (async_steps, sync_steps) for the given step names."""
+    async_steps = [_STEPS[n] for n in names if not _is_sync(_STEPS[n])]
+    sync_steps  = [_STEPS[n] for n in names if _is_sync(_STEPS[n])]
+    return async_steps, sync_steps
+
+
 @cli.command("steps")
 def cmd_steps() -> None:
     """List all registered engine steps."""
@@ -547,26 +558,40 @@ def cmd_run(step_name: str | None, gate_budget: tuple[str, ...], max_items: int 
     """
     from anpe.engine.queue import Queue
     from anpe.engine.runner import Runner
+    from anpe.engine.sync_runner import SyncRunner
     from anpe.engine.vault import Vault
 
     _apply_gate_budgets(gate_budget)
 
+    names = [step_name] if step_name else _KNOWN_STEPS
+    async_steps, sync_steps = _split_steps(names)
+
     queue = Queue()
     vault = Vault()
-    runner = Runner(list(_STEPS.values()), queue, vault)
 
     _STATUS_STYLE = {"done": "green", "error_retry": "yellow", "error_abort": "red"}
+    all_results = []
 
-    async def _run() -> None:
-        results = await runner.run_until_empty(step_name=step_name, budget=max_items)
-        for r in results:
-            style = _STATUS_STYLE.get(r.status, "white")
-            console.print(f" [{style}]{r.status}[/]  {r.step}  {r.node_id}  [dim]{r.uid}[/]")
-            if r.error:
-                console.print(f"   [dim red]{r.error}[/]")
-        console.print(f"\n [dim]{len(results)} item(s) processed.[/]")
+    if async_steps:
+        runner = Runner(async_steps, queue, vault)
 
-    asyncio.run(_run())
+        async def _run() -> None:
+            results = await runner.run_until_empty(budget=max_items)
+            all_results.extend(results)
+
+        asyncio.run(_run())
+
+    for step in sync_steps:
+        sr = SyncRunner(step, queue, vault)
+        all_results.extend(sr.run_until_empty(budget=max_items))
+
+    for r in all_results:
+        style = _STATUS_STYLE.get(r.status, "white")
+        console.print(f" [{style}]{r.status}[/]  {r.step}  {r.node_id}  [dim]{r.uid}[/]")
+        if r.error:
+            console.print(f"   [dim red]{r.error}[/]")
+    console.print(f"\n [dim]{len(all_results)} item(s) processed.[/]")
+
     queue.close()
 
 
@@ -592,6 +617,7 @@ def cmd_step(
     """
     from anpe.engine.queue import Queue
     from anpe.engine.runner import Runner
+    from anpe.engine.sync_runner import SyncRunner
     from anpe.engine.vault import Vault
 
     _apply_gate_budgets(gate_budget)
@@ -619,20 +645,25 @@ def cmd_step(
 
     console.print(f" [dim]{queued} item(s) queued ({seen - queued} already present).[/]")
 
-    runner = Runner(list(_STEPS.values()), queue, vault)
-
     _STATUS_STYLE = {"done": "green", "error_retry": "yellow", "error_abort": "red"}
 
-    async def _run() -> None:
-        results = await runner.run_until_empty(step_name=step_name, budget=max_items)
-        for r in results:
-            style = _STATUS_STYLE.get(r.status, "white")
-            console.print(f" [{style}]{r.status}[/]  {r.node_id}  [dim]{r.uid}[/]")
-            if r.error:
-                console.print(f"   [dim red]{r.error}[/]")
-        console.print(f"\n [dim]{len(results)} item(s) processed.[/]")
+    if _is_sync(step_obj):
+        results = SyncRunner(step_obj, queue, vault).run_until_empty(budget=max_items)
+    else:
+        runner = Runner([step_obj], queue, vault)
 
-    asyncio.run(_run())
+        async def _run() -> None:
+            return await runner.run_until_empty(budget=max_items)
+
+        results = asyncio.run(_run())
+
+    for r in results:
+        style = _STATUS_STYLE.get(r.status, "white")
+        console.print(f" [{style}]{r.status}[/]  {r.node_id}  [dim]{r.uid}[/]")
+        if r.error:
+            console.print(f"   [dim red]{r.error}[/]")
+    console.print(f"\n [dim]{len(results)} item(s) processed.[/]")
+
     queue.close()
 
 

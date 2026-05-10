@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from anpe.engine.base import Step
+from anpe.engine.base import AsyncStep, Step
 
 
 def _load() -> dict[str, Step]:
@@ -13,7 +13,8 @@ def _load() -> dict[str, Step]:
     from anpe.steps.review_step import ReviewStep
     from anpe.steps.summarize_ddg_step import SummarizeDdgStep
 
-    steps: list[Step] = [BootstrapStep(), FetchSirenStep(), FetchDdgStep(), SummarizeDdgStep(), EvalStep(), ReviewStep()]
+    async_steps: list[AsyncStep] = [BootstrapStep(), FetchSirenStep(), FetchDdgStep(), SummarizeDdgStep(), EvalStep()]
+    steps: list[Step] = [*async_steps, ReviewStep()]
     return {s.name: s for s in steps}
 
 

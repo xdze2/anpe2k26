@@ -5,6 +5,10 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 from typing import Callable, Iterator, Protocol
 
+from anpe.engine.queue import Queue
+from anpe.engine.rate_gate import NoGate, RateGate
+from anpe.engine.vault import Vault
+
 
 class RetryableError(Exception):
     """Step failed transiently; the item will be retried in the next run."""
@@ -13,9 +17,6 @@ class RetryableError(Exception):
 class FatalError(Exception):
     """Step failed permanently; the item will not be retried."""
 
-from anpe.engine.queue import Queue
-from anpe.engine.rate_gate import NoGate, RateGate
-from anpe.engine.vault import Vault
 
 Log = Callable[[str], None]
 
@@ -36,4 +37,10 @@ class Step(Protocol):
 
     def scan(self, queue: Queue, vault: Vault, **filter_flags: object) -> Iterator[Candidate]: ...
 
+
+class AsyncStep(Step, Protocol):
     async def work(self, args: dict, vault: Vault, log: Log) -> dict: ...  # type: ignore[type-arg]
+
+
+class SyncStep(Step, Protocol):
+    def work(self, args: dict, vault: Vault, log: Log) -> dict: ...  # type: ignore[type-arg]

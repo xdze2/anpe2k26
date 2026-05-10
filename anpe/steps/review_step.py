@@ -4,16 +4,24 @@ from __future__ import annotations
 
 import json
 
+import questionary
 from rich.console import Console
 from rich.markdown import Markdown
 from rich.padding import Padding
 from rich.rule import Rule
 
-from anpe.engine.base import Candidate, Log
+from anpe.engine.base import Candidate, Log, RetryableError
 from anpe.engine.queue import Queue
 from anpe.engine.vault import Vault
 from anpe.steps import api_throttles
 from anpe.steps.view import node_view
+
+_CHOICES = [
+    questionary.Choice("interested",     value="interested"),
+    questionary.Choice("not interested", value="not_interested"),
+    questionary.Choice("more data",      value="more_data"),
+    questionary.Choice("skip",           value="skip"),
+]
 
 _SUMMARIZE_STEP = "summarize_ddg"
 _SIREN_STEP = "fetch_siren"
@@ -75,7 +83,7 @@ class ReviewStep:
 
         return candidates
 
-    async def work(self, args: dict, vault: Vault, log: Log) -> dict:  # type: ignore[type-arg]
+    def work(self, args: dict, vault: Vault, log: Log) -> dict:  # type: ignore[type-arg]
         node_id = args["node_id"]
         summary_uri = args["summary_uri"]
         siren_uri = args.get("siren_uri")
@@ -87,11 +95,10 @@ class ReviewStep:
         _console.print(Padding(Markdown(md), pad=(0, 4)))
         _console.print()
 
-        try:
-            reaction = input(" > ").strip()
-        except (EOFError, KeyboardInterrupt):
-            _console.print("\n [dim]Interrupted.[/]")
-            raise
+        reaction = questionary.select("Reaction?", choices=_CHOICES).ask()
+        if reaction is None or reaction == "skip":
+            _console.print("[dim]skipped.[/]")
+            raise RetryableError("skipped")
 
         log(f"reaction={reaction!r}")
 
