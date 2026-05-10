@@ -9,13 +9,25 @@ from rich.markdown import Markdown
 from rich.padding import Padding
 from rich.rule import Rule
 
-from anpe.engine.queue import Queue
-from anpe.steps import api_throttles
 from anpe.engine.base import Candidate, Log
+from anpe.engine.queue import Queue
 from anpe.engine.vault import Vault
+from anpe.steps import api_throttles
+from anpe.steps.view import node_view
 
 _SUMMARIZE_STEP = "summarize_ddg"
+_SIREN_STEP = "fetch_siren"
+_EVAL_STEP = "eval"
 _console = Console()
+
+
+def _latest_outputs(queue: Queue, node_id: str, step: str) -> dict | None:  # type: ignore[type-arg]
+    for row in reversed(queue.node_history(node_id, step=step)):
+        if row["event"] == "done":
+            raw = row["outputs"]
+            result: dict = json.loads(raw) if isinstance(raw, str) else raw  # type: ignore[type-arg]
+            return result
+    return None
 
 
 class ReviewStep:
@@ -39,7 +51,19 @@ class ReviewStep:
                 continue
 
             node_id = ev["node_id"]
-            args = {"node_id": node_id, "summary_uri": summary_uri}
+
+            siren_outputs = _latest_outputs(queue, node_id, _SIREN_STEP)
+            siren_uri = siren_outputs.get("raw_uri") if siren_outputs else None
+
+            eval_outputs = _latest_outputs(queue, node_id, _EVAL_STEP)
+            eval_uri = eval_outputs.get("eval_uri") if eval_outputs else None
+
+            args = {
+                "node_id": node_id,
+                "summary_uri": summary_uri,
+                "siren_uri": siren_uri,
+                "eval_uri": eval_uri,
+            }
             if queue.is_done(self.name, self.version, args):
                 continue
 
@@ -54,14 +78,13 @@ class ReviewStep:
     async def work(self, args: dict, vault: Vault, log: Log) -> dict:  # type: ignore[type-arg]
         node_id = args["node_id"]
         summary_uri = args["summary_uri"]
+        siren_uri = args.get("siren_uri")
+        eval_uri = args.get("eval_uri")
 
-        sum_data = json.loads(vault.load(summary_uri).decode())
-        summary = sum_data.get("summary", "")
-
+        md = node_view(vault, summary_uri, siren_uri=siren_uri, eval_uri=eval_uri)
         _console.print(Rule(f"[bold]{node_id}[/]"))
         _console.print()
-        if summary:
-            _console.print(Padding(Markdown(summary), pad=(0, 4)))
+        _console.print(Padding(Markdown(md), pad=(0, 4)))
         _console.print()
 
         try:
@@ -75,6 +98,8 @@ class ReviewStep:
         payload = {
             "node_id": node_id,
             "summary_uri": summary_uri,
+            "siren_uri": siren_uri,
+            "eval_uri": eval_uri,
             "reaction": reaction,
         }
         review_uri = vault.store(
