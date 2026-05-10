@@ -10,7 +10,7 @@ from rich.markdown import Markdown
 from rich.padding import Padding
 from rich.rule import Rule
 
-from anpe.engine.base import Candidate, Log, RetryableError
+from anpe.engine.base import Candidate, FatalError, Log, RetryableError
 from anpe.engine.queue import Queue
 from anpe.engine.vault import Vault
 from anpe.steps import api_throttles
@@ -102,7 +102,10 @@ class ReviewStep:
         _console.print()
 
         reaction = questionary.select("Reaction?", choices=_CHOICES).ask()
-        if reaction is None or reaction == "skip":
+        if reaction is None:
+            _console.print("[dim]aborted.[/]")
+            raise FatalError("user quit")
+        if reaction == "skip":
             _console.print("[dim]skipped.[/]")
             raise RetryableError("skipped")
 

@@ -66,7 +66,10 @@ class SyncRunner:
                     uid=item.uid, node_id=item.node_id, step=step_name,
                     status="error_retry", error=str(e),
                 )
-            except (FatalError, Exception) as e:
+            except FatalError:
+                self._queue.mark_error(item.uid, step_name, item.node_id, "user quit", retryable=True)
+                break
+            except Exception as e:
                 self._queue.mark_error(item.uid, step_name, item.node_id, str(e), retryable=False)
                 result = SyncRunResult(
                     uid=item.uid, node_id=item.node_id, step=step_name,
