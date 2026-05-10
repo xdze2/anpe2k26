@@ -7,11 +7,21 @@ import json
 from anpe.engine.vault import Vault
 
 _HEADCOUNT_BANDS: dict[str, str] = {
-    "00": "0", "01": "1-2", "02": "3-5", "03": "6-9",
-    "11": "10-19", "12": "20-49", "21": "50-99",
-    "22": "100-199", "31": "200-249", "32": "250-499",
-    "41": "500-999", "42": "1 000-1 999", "51": "2 000-4 999",
-    "52": "5 000-9 999", "53": "10 000+",
+    "00": "0",
+    "01": "1-2",
+    "02": "3-5",
+    "03": "6-9",
+    "11": "10-19",
+    "12": "20-49",
+    "21": "50-99",
+    "22": "100-199",
+    "31": "200-249",
+    "32": "250-499",
+    "41": "500-999",
+    "42": "1 000-1 999",
+    "51": "2 000-4 999",
+    "52": "5 000-9 999",
+    "53": "10 000+",
 }
 
 _SCORE_LABEL = {
@@ -91,7 +101,7 @@ def node_view(
         sum_data = json.loads(vault.load(summary_uri).decode())
         summary = sum_data.get("summary", "").strip()
         if summary:
-            sections.append(f"## Summary\n\n{summary}")
+            sections.append(f"## Summary DDG\n\n{summary}")
     except Exception:
         pass
 
@@ -105,4 +115,4 @@ def node_view(
     if not sections:
         return "*(no data)*"
 
-    return "\n\n---\n\n".join(sections)
+    return "\n\n".join(sections)

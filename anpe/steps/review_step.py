@@ -17,10 +17,10 @@ from anpe.steps import api_throttles
 from anpe.steps.view import node_view
 
 _CHOICES = [
-    questionary.Choice("interested",     value="interested"),
+    questionary.Choice("interested", value="interested"),
     questionary.Choice("not interested", value="not_interested"),
-    questionary.Choice("more data",      value="more_data"),
-    questionary.Choice("skip",           value="skip"),
+    questionary.Choice("more data", value="more_data"),
+    questionary.Choice("skip", value="skip"),
 ]
 
 _SUMMARIZE_STEP = "summarize_ddg"
@@ -40,7 +40,7 @@ def _latest_outputs(queue: Queue, node_id: str, step: str) -> dict | None:  # ty
 
 class ReviewStep:
     name = "review"
-    version = "v1"
+    version = "v1.1"
     description = "Interactive terminal review of summarize_ddg nodes."
     rate_gate = api_throttles.NONE
 
@@ -53,7 +53,11 @@ class ReviewStep:
         """Return one Candidate per summarize_ddg-done node not yet reviewed."""
         candidates: list[Candidate] = []
         for ev in queue.done_events(_SUMMARIZE_STEP):
-            outputs = json.loads(ev["outputs"]) if isinstance(ev["outputs"], str) else ev["outputs"]
+            outputs = (
+                json.loads(ev["outputs"])
+                if isinstance(ev["outputs"], str)
+                else ev["outputs"]
+            )
             summary_uri = outputs.get("summary_uri")
             if not summary_uri:
                 continue
@@ -75,11 +79,13 @@ class ReviewStep:
             if queue.is_done(self.name, self.version, args):
                 continue
 
-            candidates.append(Candidate(
-                step=self.name,
-                node_id=node_id,
-                args=args,
-            ))
+            candidates.append(
+                Candidate(
+                    step=self.name,
+                    node_id=node_id,
+                    args=args,
+                )
+            )
 
         return candidates
 
@@ -110,7 +116,10 @@ class ReviewStep:
             "reaction": reaction,
         }
         review_uri = vault.store(
-            node_id, self.name, node_id[:8], "json",
+            node_id,
+            self.name,
+            node_id[:8],
+            "json",
             json.dumps(payload, indent=2, ensure_ascii=False).encode(),
         )
         log(f"saved → {review_uri}")
