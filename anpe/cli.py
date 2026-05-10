@@ -736,6 +736,40 @@ def jobs_status(step_name: str | None) -> None:
     console.print(f" [dim]{total_pending} pending total[/]")
 
 
+@jobs_group.command("flush")
+@click.argument("step", type=click.Choice(_KNOWN_STEPS))
+@click.option("--yes", is_flag=True, default=False, help="Skip confirmation prompt.")
+def jobs_flush(step: str, yes: bool) -> None:
+    """Abort all pending and claimed items for STEP.
+
+    Inserts an error_abort event for each item, making them invisible to
+    the runner. Use this to clear a step after a code change that produced
+    duplicate or stale queue entries.
+
+    \b
+    anpe jobs flush review
+    anpe jobs flush review --yes
+    """
+    from anpe.engine.queue import Queue
+
+    queue = Queue()
+    pending = queue.pending(step)
+    n_pending = len(pending)
+
+    if n_pending == 0:
+        console.print(f" [dim]No pending items for step [bold]{step}[/].[/]")
+        queue.close()
+        return
+
+    if not yes:
+        console.print(f" [yellow]{n_pending}[/] pending item(s) in [bold]{step}[/] will be aborted.")
+        click.confirm(" Continue?", abort=True)
+
+    n = queue.flush_step(step)
+    queue.close()
+    console.print(f" [red]flushed[/] {n} item(s) from [bold]{step}[/].")
+
+
 @jobs_group.command("history")
 @click.argument("node_id")
 @click.option("--step", "step_name", default=None, type=click.Choice(_KNOWN_STEPS),

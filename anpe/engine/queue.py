@@ -225,5 +225,29 @@ class Queue:
         ).fetchall()
         return [{"uid": r[0], "node_id": r[1], "outputs": r[2]} for r in rows]
 
+    def flush_step(self, step: str) -> int:
+        """Abort all pending (put/error_retry) and claimed items for step.
+
+        Inserts an error_abort event for each, making them invisible to the
+        runner. Returns the number of items flushed.
+        """
+        rows = self._conn.execute(
+            """
+            SELECT e.uid, e.node_id
+            FROM events e
+            WHERE e.step = ?
+              AND e.id = (SELECT MAX(id) FROM events WHERE step = ? AND uid = e.uid)
+              AND e.event IN ('put', 'error_retry', 'claimed')
+            """,
+            (step, step),
+        ).fetchall()
+        with self._conn:
+            for uid, node_id in rows:
+                self._conn.execute(
+                    "INSERT INTO events (uid, node_id, step, event, ts, error) VALUES (?,?,?,?,?,?)",
+                    (uid, node_id, step, "error_abort", _now(), "flushed"),
+                )
+        return len(rows)
+
     def close(self) -> None:
         self._conn.close()
