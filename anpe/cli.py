@@ -36,13 +36,22 @@ def cli() -> None:
 
 @cli.group("prospect")
 def prospect_group() -> None:
-    """Research and enrich prospected companies."""
+    """[DEPRECATED] Research and enrich prospected companies.
+
+    These commands read from the old per-node JSONL files (fetch.jsonl,
+    eval_queue.jsonl, reviews.jsonl). They will be removed once the data
+    engine (Queue + Vault) is complete and the CLI is ported to read from
+    the SQLite event log.
+    """
 
 
 
 @prospect_group.command("list")
 def prospect_list() -> None:
-    """List all prospect nodes with their current state.
+    """[DEPRECATED] List all prospect nodes with their current state.
+
+    Reads from the old per-node fetch.jsonl files. Will be replaced by
+    a view over the SQLite event log once the data engine is complete.
 
     Example: anpe prospect list
     """
@@ -111,7 +120,10 @@ def prospect_list() -> None:
 @prospect_group.command("status")
 @click.argument("node_id")
 def prospect_status(node_id: str) -> None:
-    """Show fetch status and history for a node.
+    """[DEPRECATED] Show fetch status and history for a node.
+
+    Reads from the old per-node fetch.jsonl. Will be replaced by
+    `anpe node history <node_id>` against the SQLite event log.
 
     Example: anpe prospect status acme
     """
@@ -153,7 +165,10 @@ def prospect_status(node_id: str) -> None:
 @prospect_group.command("show")
 @click.argument("node_id")
 def prospect_show(node_id: str) -> None:
-    """Show full summary and eval result for a node.
+    """[DEPRECATED] Show full summary and eval result for a node.
+
+    Reads from the old summarize/ and eval_results/ directories. Will be
+    replaced by vault URI lookups once the data engine is complete.
 
     Example: anpe prospect show acme_123456789
     """
@@ -221,7 +236,10 @@ def prospect_show(node_id: str) -> None:
 
 @prospect_group.command("review")
 def prospect_review() -> None:
-    """Page through summarized nodes and record a reaction.
+    """[DEPRECATED] Page through summarized nodes and record a reaction.
+
+    Not yet wired to ReviewStep. Will be replaced once reviews.jsonl is
+    migrated to the SQLite event log.
 
     Empty enter = skip (can be reviewed again later).
     Any text = saved as reaction to reviews.jsonl.
@@ -237,7 +255,10 @@ def prospect_review() -> None:
 
 @prospect_group.command("map")
 def prospect_map() -> None:
-    """Display a compact map of all nodes (one glyph per node).
+    """[DEPRECATED] Display a compact map of all nodes (one glyph per node).
+
+    Reads from the old per-node JSONL files. Will be replaced by a view
+    over the SQLite event log once the data engine is complete.
 
     Glyphs by pipeline state:
       .  pending fetch          (dim)
