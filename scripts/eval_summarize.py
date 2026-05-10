@@ -14,10 +14,7 @@ import traceback
 from datetime import datetime
 from pathlib import Path
 
-from pydantic_ai import Agent
-from pydantic_ai.models.mistral import MistralModel
-from pydantic_ai.providers.mistral import MistralProvider
-
+from anpe.clients.mistral import mistral_run
 from anpe.config import settings
 from anpe.steps.summarize_fn import _SYSTEM, SummarizeResult
 
@@ -35,16 +32,8 @@ FIXTURES_DIR = Path(__file__).parent / "eval_fixtures"
 FIXTURES: list[dict] = json.loads((FIXTURES_DIR / "fixtures.json").read_text())
 
 
-def make_agent(model_slug: str) -> Agent:
-    model = MistralModel(
-        model_slug,
-        provider=MistralProvider(api_key=settings.mistral_api_key),
-    )
-    return Agent(model, output_type=SummarizeResult, system_prompt=_SYSTEM)
-
-
 async def run_one(
-    agent: Agent, raw_data: str, company_profile: str, previous_summary: str
+    model_slug: str, raw_data: str, company_profile: str, previous_summary: str
 ) -> tuple[SummarizeResult, float]:
     prompt = ""
     if company_profile:
@@ -54,9 +43,9 @@ async def run_one(
     prompt += f"## New data\n\n{raw_data}"
 
     t0 = time.monotonic()
-    result = await agent.run(prompt)
+    result = await mistral_run(SummarizeResult, model_slug, _SYSTEM, prompt)
     elapsed = time.monotonic() - t0
-    return result.output, elapsed
+    return result, elapsed
 
 
 async def main() -> None:
@@ -72,10 +61,9 @@ async def main() -> None:
 
             for model_slug in MODELS:
                 print(f"\n  model: {model_slug}")
-                agent = make_agent(model_slug)
                 try:
                     result, elapsed = await run_one(
-                        agent,
+                        model_slug,
                         raw_data,
                         fixture.get("company_profile", ""),
                         fixture["previous_summary"],
