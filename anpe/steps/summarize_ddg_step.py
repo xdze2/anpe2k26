@@ -19,13 +19,19 @@ _DDG_STEP = "fetch_ddg"
 class SummarizeDdgStep:
     name = "summarize_ddg"
     version = SUMMARIZE_VERSION + ".2"
-    description = "Summarize raw DDG fetch results with an LLM and extract follow-up targets."
+    description = (
+        "Summarize raw DDG fetch results with an LLM and extract follow-up targets."
+    )
     rate_gate = api_throttles.MISTRAL
 
     def scan(self, queue: Queue, _vault: Vault, **_: object) -> Iterator[Candidate]:
         """Return one Candidate per completed fetch_ddg run not yet summarized."""
         for ev in queue.done_events(_DDG_STEP):
-            outputs = json.loads(ev["outputs"]) if isinstance(ev["outputs"], str) else ev["outputs"]
+            outputs = (
+                json.loads(ev["outputs"])
+                if isinstance(ev["outputs"], str)
+                else ev["outputs"]
+            )
             raw_ddg_uri = outputs.get("raw_uri")
             siren_uri = outputs.get("siren_uri")
             node_id = ev["node_id"]
@@ -58,7 +64,8 @@ class SummarizeDdgStep:
         siren_raw = json.loads(vault.load(siren_uri).decode())
         company_profile = _fmt_company_profile(siren_raw)
 
-        result = await ddg_summarize(raw_data, "", company_profile)
+        previous_summary = ""  # HACK
+        result = await ddg_summarize(raw_data, previous_summary, company_profile)
         log(f"summarize done  status={result.status}  model={result.model}")
 
         payload = {
@@ -69,7 +76,11 @@ class SummarizeDdgStep:
             "prompt": result.prompt,
         }
         summary_uri = vault.store(
-            node_id, self.name, node_id[:8], "json", json.dumps(payload, indent=2, ensure_ascii=False).encode()
+            node_id,
+            self.name,
+            node_id[:8],
+            "json",
+            json.dumps(payload, indent=2, ensure_ascii=False).encode(),
         )
         log(f"saved → {summary_uri}")
         return {"summary_uri": summary_uri, **payload}

@@ -19,8 +19,10 @@ _SUMMARIZE_STEP = "summarize_ddg"
 
 class EvalStep:
     name = "eval"
-    version = EVAL_VERSION + ".2"
-    description = "Score each summarized company against the user profile and assign a fit level."
+    version = EVAL_VERSION + ".3"
+    description = (
+        "Score each summarized company against the user profile and assign a fit level."
+    )
     rate_gate = api_throttles.MISTRAL
 
     def scan(
@@ -38,7 +40,11 @@ class EvalStep:
             return
 
         for ev in queue.done_events(_SUMMARIZE_STEP):
-            outputs = json.loads(ev["outputs"]) if isinstance(ev["outputs"], str) else ev["outputs"]
+            outputs = (
+                json.loads(ev["outputs"])
+                if isinstance(ev["outputs"], str)
+                else ev["outputs"]
+            )
             summary_uri = outputs.get("summary_uri")
             if not summary_uri:
                 continue
@@ -71,7 +77,9 @@ class EvalStep:
         summary = sum_data.get("summary", "")
 
         profile_text = vault.load(profile_uri).decode()
-        log(f"calling llm_eval  summary_len={len(summary)}  profile_len={len(profile_text)}")
+        log(
+            f"calling llm_eval  summary_len={len(summary)}  profile_len={len(profile_text)}"
+        )
 
         try:
             result = await llm_eval(summary, profile_text)
@@ -86,9 +94,13 @@ class EvalStep:
             "uncertainty": result.uncertainty,
             "summary_uri": summary_uri,
             "profile_uri": profile_uri,
+            "prompt": result.prompt,
         }
         eval_uri = vault.store(
-            node_id, self.name, node_id[:8], "json",
+            node_id,
+            self.name,
+            node_id[:8],
+            "json",
             json.dumps(payload, indent=2, ensure_ascii=False).encode(),
         )
         log(f"saved → {eval_uri}")

@@ -48,9 +48,12 @@ class EvalResult(BaseModel):
     fit: str
     dealbreakers: list[str]
     uncertainty: str  # "low" | "medium" | "high"
+    prompt: str = ""
 
 
 async def llm_eval(summary: str, profile: str) -> EvalResult:
     """Call the LLM to score a company summary against the user profile."""
     user_prompt = f"## User profile\n\n{profile}\n\n## Company summary\n\n{summary}"
-    return await mistral_run(EvalResult, _MODEL_NAME, _SYSTEM, user_prompt)
+    result = await mistral_run(EvalResult, _MODEL_NAME, _SYSTEM, user_prompt)
+    result.prompt = f"## System prompt\n\n{_SYSTEM}\n## User prompt\n\n{user_prompt}"
+    return result
