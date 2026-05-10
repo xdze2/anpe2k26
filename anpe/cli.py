@@ -770,6 +770,31 @@ def jobs_flush(step: str, yes: bool) -> None:
     console.print(f" [red]flushed[/] {n} item(s) from [bold]{step}[/].")
 
 
+@jobs_group.command("stack")
+@click.argument("step", type=click.Choice(_KNOWN_STEPS))
+def jobs_stack(step: str) -> None:
+    """List active (claimed) jobs for STEP.
+
+    \b
+    anpe jobs stack review
+    anpe jobs stack eval
+    """
+    from anpe.engine.queue import Queue
+
+    queue = Queue()
+    items = queue.pending(step)
+    queue.close()
+
+    if not items:
+        console.print(f" [dim]No pending jobs for step [bold]{step}[/].[/]")
+        return
+
+    console.print(f" [yellow]{len(items)}[/] pending job(s) in [bold]{step}[/]:")
+    console.print()
+    for item in items:
+        console.print(f"  [yellow]•[/] [bold]{item.node_id}[/]  [dim]{item.uid[:8]}[/]")
+
+
 @jobs_group.command("history")
 @click.argument("node_id")
 @click.option("--step", "step_name", default=None, type=click.Choice(_KNOWN_STEPS),
