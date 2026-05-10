@@ -6,7 +6,9 @@ import json
 
 from anpe.engine.queue import Queue
 from anpe.steps import api_throttles
-from anpe.engine.base import Candidate, Log
+from pydantic import ValidationError
+
+from anpe.engine.base import Candidate, Log, RetryableError
 from collections.abc import Iterator
 from anpe.engine.vault import Vault
 from anpe.steps.eval_fn import EVAL_VERSION, llm_eval
@@ -71,7 +73,10 @@ class EvalStep:
         profile_text = vault.load(profile_uri).decode()
         log(f"calling llm_eval  summary_len={len(summary)}  profile_len={len(profile_text)}")
 
-        result = await llm_eval(summary, profile_text)
+        try:
+            result = await llm_eval(summary, profile_text)
+        except ValidationError as e:
+            raise RetryableError(f"LLM returned invalid JSON structure: {e}") from e
         log(f"eval done  score={result.score}  uncertainty={result.uncertainty}")
 
         payload = {
