@@ -50,20 +50,29 @@ class ReviewStep:
         vault: Vault,
         **_: object,
     ) -> list[Candidate]:
-        """Return one Candidate per summarize_ddg-done node not yet reviewed."""
-        candidates: list[Candidate] = []
-        for ev in queue.done_events(_SUMMARIZE_STEP):
+        """Return one Candidate per node, built from the latest of each input.
+
+        Stale when any input changes: new summary_uri, new eval_uri, or both.
+        The content-addressed uid encodes the full input set, so is_done()
+        correctly tracks which exact combination has already been reviewed.
+        """
+        # Collect the latest summary_uri per node (newest-first → first seen wins).
+        latest_summary: dict[str, str] = {}
+        for ev in queue.done_events(_SUMMARIZE_STEP, newest_first=True):
+            node_id = ev["node_id"]
+            if node_id in latest_summary:
+                continue
             outputs = (
                 json.loads(ev["outputs"])
                 if isinstance(ev["outputs"], str)
                 else ev["outputs"]
             )
             summary_uri = outputs.get("summary_uri")
-            if not summary_uri:
-                continue
+            if summary_uri:
+                latest_summary[node_id] = summary_uri
 
-            node_id = ev["node_id"]
-
+        candidates: list[Candidate] = []
+        for node_id, summary_uri in latest_summary.items():
             siren_outputs = _latest_outputs(queue, node_id, _SIREN_STEP)
             siren_uri = siren_outputs.get("raw_uri") if siren_outputs else None
 

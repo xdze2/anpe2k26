@@ -67,11 +67,16 @@ class Queue:
         uid = _content_uid(step, version, args)
 
         with self._conn:
-            # Check if this uid already has any event — if so, skip.
+            # Skip if the latest event is an active or completed state.
+            # error_abort (from flush) is treated as a cleared slot — allow re-put.
             row = self._conn.execute(
-                "SELECT 1 FROM events WHERE uid = ? LIMIT 1", (uid,)
+                """
+                SELECT event FROM events WHERE uid = ?
+                ORDER BY id DESC LIMIT 1
+                """,
+                (uid,),
             ).fetchone()
-            if row is None:
+            if row is None or row[0] == "error_abort":
                 self._conn.execute(
                     "INSERT INTO events (uid, node_id, step, event, ts, args) VALUES (?,?,?,?,?,?)",
                     (uid, node_id, step, "put", _now(), json.dumps(args)),
@@ -94,6 +99,7 @@ class Queue:
                     SELECT e.uid, e.node_id, put_ev.args
                     FROM events e
                     JOIN events put_ev ON put_ev.uid = e.uid AND put_ev.step = e.step AND put_ev.event = 'put'
+                      AND put_ev.id = (SELECT MIN(id) FROM events WHERE uid = e.uid AND event = 'put')
                     WHERE e.step = ?
                       AND e.id = (SELECT MAX(id) FROM events WHERE step = ? AND uid = e.uid)
                       AND e.event IN ('put', 'error_retry')
@@ -108,6 +114,7 @@ class Queue:
                     SELECT e.uid, e.node_id, put_ev.args
                     FROM events e
                     JOIN events put_ev ON put_ev.uid = e.uid AND put_ev.step = e.step AND put_ev.event = 'put'
+                      AND put_ev.id = (SELECT MIN(id) FROM events WHERE uid = e.uid AND event = 'put')
                     WHERE e.step = ?
                       AND e.id = (SELECT MAX(id) FROM events WHERE step = ? AND uid = e.uid)
                       AND e.event IN ('put', 'error_retry')
@@ -146,6 +153,7 @@ class Queue:
             SELECT e.uid, e.node_id, put_ev.args
             FROM events e
             JOIN events put_ev ON put_ev.uid = e.uid AND put_ev.event = 'put'
+              AND put_ev.id = (SELECT MIN(id) FROM events WHERE uid = e.uid AND event = 'put')
             WHERE e.step = ?
               AND e.id = (SELECT MAX(id) FROM events WHERE step = ? AND uid = e.uid)
               AND e.event IN ('put', 'error_retry')

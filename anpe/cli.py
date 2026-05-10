@@ -792,7 +792,8 @@ def jobs_stack(step: str) -> None:
     console.print(f" [yellow]{len(items)}[/] pending job(s) in [bold]{step}[/]:")
     console.print()
     for item in items:
-        console.print(f"  [yellow]•[/] [bold]{item.node_id}[/]  [dim]{item.uid[:8]}[/]")
+        args_str = "  ".join(f"[dim]{k}=[/][cyan]{v}[/]" for k, v in item.args.items())
+        console.print(f"  [yellow]•[/] [bold]{item.node_id}[/]  [dim]{item.uid[:8]}[/]  {args_str}")
 
 
 @jobs_group.command("history")
