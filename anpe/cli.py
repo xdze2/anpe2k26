@@ -40,15 +40,27 @@ def cmd_fetch_siren(do_max: int | None, overwrite: bool) -> None:
 
 
 @cli.command("fetch_ddg")
-def cmd_fetch_ddg() -> None:
-    """[stub] Fetch DuckDuckGo search results per company."""
-    raise NotImplementedError("step 6")
+@click.option("--do-max", default=None, type=int, help="Max number of companies to fetch.")
+@click.option("--overwrite", is_flag=True, default=False, help="Re-fetch even if exists.")
+def cmd_fetch_ddg(do_max: int | None, overwrite: bool) -> None:
+    """Fetch DuckDuckGo search results for each company with siren data."""
+    from anpe.steps.fetch_ddg_step import FetchDdgStep
+
+    vault = Vault()
+    ran, skipped = run_step(FetchDdgStep(), vault, do_max=do_max, overwrite=overwrite)
+    console.print(f"fetch_ddg: ran={ran} skipped={skipped}")
 
 
 @cli.command("summarize_ddg")
-def cmd_summarize_ddg() -> None:
-    """[stub] Summarize DDG results with LLM."""
-    raise NotImplementedError("step 7")
+@click.option("--do-max", default=None, type=int, help="Max number of companies to summarize.")
+@click.option("--overwrite", is_flag=True, default=False, help="Re-summarize even if exists.")
+def cmd_summarize_ddg(do_max: int | None, overwrite: bool) -> None:
+    """Summarize DDG results with LLM for each company with DDG data."""
+    from anpe.steps.summarize_ddg_step import SummarizeDdgStep
+
+    vault = Vault()
+    ran, skipped = run_step(SummarizeDdgStep(), vault, do_max=do_max, overwrite=overwrite)
+    console.print(f"summarize_ddg: ran={ran} skipped={skipped}")
 
 
 @cli.command("llm_eval")
