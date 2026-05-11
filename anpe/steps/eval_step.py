@@ -22,7 +22,7 @@ class EvalStep:
         self,
         vault: Vault,
         overwrite: bool = False,
-        skip_non_relevant: bool = True,
+        keep_non_relevant: bool = False,
         **_: object,
     ) -> Iterator[Candidate]:
         nodes_dir = vault.root / "nodes"
@@ -37,7 +37,7 @@ class EvalStep:
             summary_uri = str(summary_path.relative_to(vault.root))
 
             is_not_relevant = False
-            if skip_non_relevant:
+            if not keep_non_relevant:
                 data = json.loads(summary_path.read_bytes())
                 is_not_relevant = data.get("status") == "not_relevant"
 

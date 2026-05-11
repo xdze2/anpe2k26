@@ -122,7 +122,7 @@ Wire up `anpe summarize_ddg [--do-max N] [--overwrite]` in `cli2.py`.
 `work` is interactive: renders the node card via `view.py`, calls `questionary.select`,
 writes `user_review_<node_id[:8]>.json`.
 
-Wire up `anpe review [--do-max N] [--random] [--skip-non-relevant] [--overwrite]`
+Wire up `anpe review [--do-max N] [--random] [--keep-non-relevant] [--overwrite]`
 in `cli2.py`.
 
 **Test:** `scan` skips already-reviewed nodes. `work` is hard to unit-test; manual
@@ -135,7 +135,7 @@ smoke test suffices.
 Both are read-only display commands already partially designed in `steps/view.py`.
 Wire them up using `vault.find_latest` to locate artifacts per node.
 
-`anpe list [--skip-non-relevant] [--nbr N] [--sort-field FIELD] [--state STATE]`
+`anpe list [--keep-non-relevant] [--nbr N] [--sort-field FIELD] [--state STATE]`
 `anpe view <node_id>`
 
 **Test:** run against the real vault and verify no crash.

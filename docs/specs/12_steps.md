@@ -198,12 +198,12 @@ prompt: str                      # full prompt sent to LLM
 Assigns a fit level and lists dealbreakers and uncertainty. Reads the user profile
 from `user_preference.md`.
 
-**CLI:** `anpe llm_eval [--overwrite] [--skip-non-relevant]`
+**CLI:** `anpe llm_eval [--overwrite] [--keep-non-relevant]`
 
 **Args:**
 
 - `overwrite` (bool)
-- `skip_non_relevant` (bool, default True) — skip nodes where summarize status ≠ ok
+- `keep_non_relevant` (bool, default False) — also eval nodes with status=not_relevant (skipped by default)
 
 **Inputs:**
 
@@ -241,13 +241,13 @@ prompt: str          # full prompt
 data + DDG summary + eval score) and asks the user to react. Saves the reaction to a
 file. Pressing Escape or Ctrl+C stop the review.
 
-**CLI:** `anpe review [--skip-non-relevant] [--do-max N] [--random] [--overwrite] `
+**CLI:** `anpe review [--keep-non-relevant] [--do-max N] [--random] [--overwrite]`
 
 **Args:**
 
 - `do_max` (int, default 10)
 - `random` pick node at random
-- `skip_non_relevant` (bool, default True)
+- `keep_non_relevant` (bool, default False) — also review nodes with status=not_relevant
 - `overwrite` (bool)
 
 **Inputs:**
@@ -285,11 +285,11 @@ ts: str
 **Description:** Prints a formatted table of all companies in the vault, optionally
 filtered by state or score, sorted by a given field.
 
-**CLI:** `anpe list [--skip-non-relevant] [--nbr N] [--sort-field FIELD] [--state STATE]`
+**CLI:** `anpe list [--keep-non-relevant] [--nbr N] [--sort-field FIELD] [--state STATE]`
 
 **Args:**
 
-- `skip_non_relevant` (bool, default True)
+- `keep_non_relevant` (bool, default False) — include nodes with status=not_relevant
 - `nbr` (int, optional) — max rows to show
 - `sort_field` (str, optional) — field to sort by
 - `state` (str, optional) — filter by review reaction or eval score

@@ -90,13 +90,13 @@ def cmd_summarize_ddg(do_max: int | None, overwrite: bool) -> None:
     "--overwrite", is_flag=True, default=False, help="Re-eval even if output exists."
 )
 @click.option(
-    "--skip-non-relevant",
+    "--keep-non-relevant",
     is_flag=True,
-    default=True,
-    help="Skip nodes with status=not_relevant.",
+    default=False,
+    help="Also eval nodes with status=not_relevant (skipped by default).",
 )
 def cmd_llm_eval(
-    do_max: int | None, overwrite: bool, skip_non_relevant: bool = True
+    do_max: int | None, overwrite: bool, keep_non_relevant: bool = False
 ) -> None:
     """Score each summarized company against the user profile."""
     from anpe.steps.eval_step import EvalStep
@@ -107,7 +107,7 @@ def cmd_llm_eval(
         vault,
         do_max=do_max,
         overwrite=overwrite,
-        skip_non_relevant=skip_non_relevant,
+        keep_non_relevant=keep_non_relevant,
     )
     console.print(f"llm_eval: ran={ran} skipped={skipped}")
 
