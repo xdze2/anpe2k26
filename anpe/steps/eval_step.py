@@ -1,80 +1,69 @@
-"""Eval step — scan (node, summary, profile) triples lacking a scored eval."""
+"""Eval step — score each summarized company against the user profile."""
 
 from __future__ import annotations
 
 import json
+from collections.abc import Iterator
 
-from anpe.engine.queue import Queue
-from anpe.steps import api_throttles
 from pydantic import ValidationError
 
-from anpe.engine.base import Candidate, Log, RetryableError
-from collections.abc import Iterator
+from anpe.engine.types import Candidate, FatalError, Log, RetryableError
 from anpe.engine.vault import Vault
-from anpe.steps.eval_fn import EVAL_VERSION, llm_eval
+from anpe.steps.eval_fn import llm_eval
 
-_PROFILE_URI = "user_preference.md"
 _SUMMARIZE_STEP = "summarize_ddg"
+_PROFILE_URI = "user_preference.md"
 
 
 class EvalStep:
     name = "eval"
-    version = EVAL_VERSION + ".3"
-    description = (
-        "Score each summarized company against the user profile and assign a fit level."
-    )
-    rate_gate = api_throttles.MISTRAL
 
     def scan(
         self,
-        queue: Queue,
         vault: Vault,
+        overwrite: bool = False,
+        skip_non_relevant: bool = True,
         **_: object,
     ) -> Iterator[Candidate]:
-        """Return one Candidate per completed summarize_ddg run not yet evaluated.
+        nodes_dir = vault.root / "nodes"
+        if not nodes_dir.exists():
+            return
 
-        # TODO: add min_score filter (requires reading prior eval done events)
-        # TODO: add exclude_reaction filter (requires reactions stored in queue)
-        """
         if not vault.exists(_PROFILE_URI):
             return
 
-        for ev in queue.done_events(_SUMMARIZE_STEP):
-            outputs = (
-                json.loads(ev["outputs"])
-                if isinstance(ev["outputs"], str)
-                else ev["outputs"]
-            )
-            summary_uri = outputs.get("summary_uri")
-            if not summary_uri:
-                continue
+        for summary_path in sorted(nodes_dir.glob(f"*/{_SUMMARIZE_STEP}_*.json")):
+            node_id = summary_path.parent.name
+            summary_uri = str(summary_path.relative_to(vault.root))
 
-            node_id = ev["node_id"]
-            args = {
-                "node_id": node_id,
-                "summary_uri": summary_uri,
-                "profile_uri": _PROFILE_URI,
-            }
-            if queue.is_done(self.name, self.version, args):
-                continue
+            is_not_relevant = False
+            if skip_non_relevant:
+                data = json.loads(summary_path.read_bytes())
+                is_not_relevant = data.get("status") == "not_relevant"
 
-            # TODO: surface score, reaction, naf in context for future filter flags
+            eval_uri = vault.output_uri(node_id, self.name)
             yield Candidate(
-                step=self.name,
                 node_id=node_id,
-                args=args,
-                context={},
+                args={
+                    "node_id": node_id,
+                    "summary_uri": summary_uri,
+                    "profile_uri": _PROFILE_URI,
+                },
+                skip=is_not_relevant or (vault.exists(eval_uri) and not overwrite),
             )
 
-    async def work(self, args: dict, vault: Vault, log: Log) -> dict:  # type: ignore[type-arg]
+    def work(self, args: dict, vault: Vault, log: Log) -> None:  # type: ignore[type-arg]
         node_id = args["node_id"]
         summary_uri = args["summary_uri"]
         profile_uri = args["profile_uri"]
 
-        log(f"summary_uri={summary_uri}  profile_uri={profile_uri}")
+        log(f"node={node_id}  summary_uri={summary_uri}")
 
         sum_data = json.loads(vault.load(summary_uri).decode())
         summary = sum_data.get("summary", "")
+
+        if not vault.exists(profile_uri):
+            raise FatalError(f"missing profile: {profile_uri}")
 
         profile_text = vault.load(profile_uri).decode()
         log(
@@ -82,9 +71,10 @@ class EvalStep:
         )
 
         try:
-            result = await llm_eval(summary, profile_text)
+            result = llm_eval(summary, profile_text)
         except ValidationError as e:
             raise RetryableError(f"LLM returned invalid JSON structure: {e}") from e
+
         log(f"eval done  score={result.score}  uncertainty={result.uncertainty}")
 
         payload = {
@@ -96,12 +86,7 @@ class EvalStep:
             "profile_uri": profile_uri,
             "prompt": result.prompt,
         }
-        eval_uri = vault.store(
-            node_id,
-            self.name,
-            node_id[:8],
-            "json",
-            json.dumps(payload, indent=2, ensure_ascii=False).encode(),
+        eval_uri = vault.output_uri(node_id, self.name)
+        vault.write(
+            eval_uri, json.dumps(payload, indent=2, ensure_ascii=False).encode(), log
         )
-        log(f"saved → {eval_uri}")
-        return {"eval_uri": eval_uri, **payload}

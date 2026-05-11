@@ -110,14 +110,7 @@ Wire up `anpe summarize_ddg [--do-max N] [--overwrite]` in `cli2.py`.
 
 ---
 
-## Step 8 — port `llm_eval`
-
-`scan` finds nodes with summarize output and `status == "ok"` (unless
-`skip_non_relevant=False`) but no eval output.
-
-Wire up `anpe llm_eval [--overwrite] [--skip-non-relevant]` in `cli2.py`.
-
-**Test:** scan skips `not_relevant` nodes when flag is set; yields `ok` nodes.
+## ~~Step 8 — port `llm_eval`~~ ✓ done
 
 ---
 

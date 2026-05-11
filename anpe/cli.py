@@ -17,7 +17,12 @@ def cli() -> None:
 
 
 @cli.command("bootstrap")
-@click.option("--overwrite", is_flag=True, default=False, help="Re-run even if listing.jsonl exists.")
+@click.option(
+    "--overwrite",
+    is_flag=True,
+    default=False,
+    help="Re-run even if listing.jsonl exists.",
+)
 def cmd_bootstrap(overwrite: bool) -> None:
     """Build listing.jsonl from seed_query.yaml."""
     from anpe.steps.bootstrap_step import BootstrapStep
@@ -28,8 +33,12 @@ def cmd_bootstrap(overwrite: bool) -> None:
 
 
 @cli.command("fetch_siren")
-@click.option("--do-max", default=None, type=int, help="Max number of companies to fetch.")
-@click.option("--overwrite", is_flag=True, default=False, help="Re-fetch even if output exists.")
+@click.option(
+    "--do-max", default=None, type=int, help="Max number of companies to fetch."
+)
+@click.option(
+    "--overwrite", is_flag=True, default=False, help="Re-fetch even if output exists."
+)
 def cmd_fetch_siren(do_max: int | None, overwrite: bool) -> None:
     """Fetch SIREN registry data for each company in listing.jsonl."""
     from anpe.steps.fetch_siren_step import FetchSirenStep
@@ -40,8 +49,12 @@ def cmd_fetch_siren(do_max: int | None, overwrite: bool) -> None:
 
 
 @cli.command("fetch_ddg")
-@click.option("--do-max", default=None, type=int, help="Max number of companies to fetch.")
-@click.option("--overwrite", is_flag=True, default=False, help="Re-fetch even if exists.")
+@click.option(
+    "--do-max", default=None, type=int, help="Max number of companies to fetch."
+)
+@click.option(
+    "--overwrite", is_flag=True, default=False, help="Re-fetch even if exists."
+)
 def cmd_fetch_ddg(do_max: int | None, overwrite: bool) -> None:
     """Fetch DuckDuckGo search results for each company with siren data."""
     from anpe.steps.fetch_ddg_step import FetchDdgStep
@@ -52,21 +65,51 @@ def cmd_fetch_ddg(do_max: int | None, overwrite: bool) -> None:
 
 
 @cli.command("summarize_ddg")
-@click.option("--do-max", default=None, type=int, help="Max number of companies to summarize.")
-@click.option("--overwrite", is_flag=True, default=False, help="Re-summarize even if exists.")
+@click.option(
+    "--do-max", default=None, type=int, help="Max number of companies to summarize."
+)
+@click.option(
+    "--overwrite", is_flag=True, default=False, help="Re-summarize even if exists."
+)
 def cmd_summarize_ddg(do_max: int | None, overwrite: bool) -> None:
     """Summarize DDG results with LLM for each company with DDG data."""
     from anpe.steps.summarize_ddg_step import SummarizeDdgStep
 
     vault = Vault()
-    ran, skipped = run_step(SummarizeDdgStep(), vault, do_max=do_max, overwrite=overwrite)
+    ran, skipped = run_step(
+        SummarizeDdgStep(), vault, do_max=do_max, overwrite=overwrite
+    )
     console.print(f"summarize_ddg: ran={ran} skipped={skipped}")
 
 
 @cli.command("llm_eval")
-def cmd_llm_eval() -> None:
-    """[stub] LLM evaluation of each company."""
-    raise NotImplementedError("step 8")
+@click.option(
+    "--do-max", default=None, type=int, help="Max number of companies to eval."
+)
+@click.option(
+    "--overwrite", is_flag=True, default=False, help="Re-eval even if output exists."
+)
+@click.option(
+    "--skip-non-relevant",
+    is_flag=True,
+    default=True,
+    help="Skip nodes with status=not_relevant.",
+)
+def cmd_llm_eval(
+    do_max: int | None, overwrite: bool, skip_non_relevant: bool = True
+) -> None:
+    """Score each summarized company against the user profile."""
+    from anpe.steps.eval_step import EvalStep
+
+    vault = Vault()
+    ran, skipped = run_step(
+        EvalStep(),
+        vault,
+        do_max=do_max,
+        overwrite=overwrite,
+        skip_non_relevant=skip_non_relevant,
+    )
+    console.print(f"llm_eval: ran={ran} skipped={skipped}")
 
 
 @cli.command("review")
