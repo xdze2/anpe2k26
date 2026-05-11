@@ -3,6 +3,8 @@
 from __future__ import annotations
 
 import json
+import random
+from collections.abc import Iterator
 
 import questionary
 from rich.console import Console
@@ -10,10 +12,8 @@ from rich.markdown import Markdown
 from rich.padding import Padding
 from rich.rule import Rule
 
-from anpe.engine.base import Candidate, FatalError, Log, RetryableError
-from anpe.engine.queue import Queue
+from anpe.engine.types import Candidate, FatalError, Log, RetryableError
 from anpe.engine.vault import Vault
-from anpe.steps import api_throttles
 from anpe.steps.view import node_view
 
 _CHOICES = [
@@ -29,76 +29,68 @@ _EVAL_STEP = "eval"
 _console = Console()
 
 
-def _latest_outputs(queue: Queue, node_id: str, step: str) -> dict | None:  # type: ignore[type-arg]
-    for row in reversed(queue.node_history(node_id, step=step)):
-        if row["event"] == "done":
-            raw = row["outputs"]
-            result: dict = json.loads(raw) if isinstance(raw, str) else raw  # type: ignore[type-arg]
-            return result
-    return None
-
-
 class ReviewStep:
     name = "review"
-    version = "v1.1"
-    description = "Interactive terminal review of summarize_ddg nodes."
-    rate_gate = api_throttles.NONE
 
     def scan(
         self,
-        queue: Queue,
         vault: Vault,
+        overwrite: bool = False,
+        keep_non_relevant: bool = False,
+        random_order: bool = False,
         **_: object,
-    ) -> list[Candidate]:
-        """Return one Candidate per node, built from the latest of each input.
-
-        Stale when any input changes: new summary_uri, new eval_uri, or both.
-        The content-addressed uid encodes the full input set, so is_done()
-        correctly tracks which exact combination has already been reviewed.
-        """
-        # Collect the latest summary_uri per node (newest-first → first seen wins).
-        latest_summary: dict[str, str] = {}
-        for ev in queue.done_events(_SUMMARIZE_STEP, newest_first=True):
-            node_id = ev["node_id"]
-            if node_id in latest_summary:
-                continue
-            outputs = (
-                json.loads(ev["outputs"])
-                if isinstance(ev["outputs"], str)
-                else ev["outputs"]
-            )
-            summary_uri = outputs.get("summary_uri")
-            if summary_uri:
-                latest_summary[node_id] = summary_uri
+    ) -> Iterator[Candidate]:
+        nodes_dir = vault.root / "nodes"
+        if not nodes_dir.exists():
+            return
 
         candidates: list[Candidate] = []
-        for node_id, summary_uri in latest_summary.items():
-            siren_outputs = _latest_outputs(queue, node_id, _SIREN_STEP)
-            siren_uri = siren_outputs.get("raw_uri") if siren_outputs else None
+        for summary_path in sorted(nodes_dir.glob(f"*/{_SUMMARIZE_STEP}_*.json")):
+            node_id = summary_path.parent.name
+            summary_uri = str(summary_path.relative_to(vault.root))
 
-            eval_outputs = _latest_outputs(queue, node_id, _EVAL_STEP)
-            eval_uri = eval_outputs.get("eval_uri") if eval_outputs else None
+            if not keep_non_relevant:
+                try:
+                    data = json.loads(summary_path.read_bytes())
+                    if data.get("status") == "not_relevant":
+                        continue
+                except Exception:
+                    pass
 
-            args = {
-                "node_id": node_id,
-                "summary_uri": summary_uri,
-                "siren_uri": siren_uri,
-                "eval_uri": eval_uri,
-            }
-            if queue.is_done(self.name, self.version, args):
-                continue
+            siren_uri: str | None = None
+            siren_paths = list(summary_path.parent.glob(f"{_SIREN_STEP}_*.json"))
+            if siren_paths:
+                siren_uri = str(siren_paths[0].relative_to(vault.root))
 
+            eval_uri: str | None = None
+            eval_paths = list(summary_path.parent.glob(f"{_EVAL_STEP}_*.json"))
+            if eval_paths:
+                eval_uri = str(eval_paths[0].relative_to(vault.root))
+
+            review_uri = vault.output_uri(node_id, self.name)
             candidates.append(
                 Candidate(
-                    step=self.name,
                     node_id=node_id,
-                    args=args,
+                    args={
+                        "node_id": node_id,
+                        "summary_uri": summary_uri,
+                        "siren_uri": siren_uri,
+                        "eval_uri": eval_uri,
+                    },
+                    skip=vault.exists(review_uri) and not overwrite,
                 )
             )
 
-        return candidates
+        if random_order:
+            pending = [c for c in candidates if not c.skip]
+            done = [c for c in candidates if c.skip]
+            random.shuffle(pending)
+            yield from done
+            yield from pending
+        else:
+            yield from candidates
 
-    def work(self, args: dict, vault: Vault, log: Log) -> dict:  # type: ignore[type-arg]
+    def work(self, args: dict, vault: Vault, log: Log) -> None:  # type: ignore[type-arg]
         node_id = args["node_id"]
         summary_uri = args["summary_uri"]
         siren_uri = args.get("siren_uri")
@@ -127,12 +119,9 @@ class ReviewStep:
             "eval_uri": eval_uri,
             "reaction": reaction,
         }
-        review_uri = vault.store(
-            node_id,
-            self.name,
-            node_id[:8],
-            "json",
+        review_uri = vault.output_uri(node_id, self.name)
+        vault.write(
+            review_uri,
             json.dumps(payload, indent=2, ensure_ascii=False).encode(),
+            log,
         )
-        log(f"saved → {review_uri}")
-        return {"review_uri": review_uri, "reaction": reaction}

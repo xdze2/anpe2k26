@@ -81,6 +81,7 @@ Rewrite `FetchSirenStep` so it no longer touches `Queue`:
 Wire up `anpe fetch_siren [--do-max N] [--overwrite]` in `cli2.py` using `run_step`.
 
 **Test:**
+
 1. `scan` yields nodes from listing, skips those with existing output files.
 2. `work` writes a file; re-running `scan` with `overwrite=False` skips it.
 3. CLI smoke test: run `anpe fetch_siren --do-max 0` and check it prints a summary
@@ -114,23 +115,11 @@ Wire up `anpe summarize_ddg [--do-max N] [--overwrite]` in `cli2.py`.
 
 ---
 
-## Step 9 — port `review`
-
-`scan` finds nodes with summarize output but no user-review output. Supports
-`--random` (shuffle before `islice`).
-
-`work` is interactive: renders the node card via `view.py`, calls `questionary.select`,
-writes `user_review_<node_id[:8]>.json`.
-
-Wire up `anpe review [--do-max N] [--random] [--keep-non-relevant] [--overwrite]`
-in `cli2.py`.
-
-**Test:** `scan` skips already-reviewed nodes. `work` is hard to unit-test; manual
-smoke test suffices.
+## ~~Step 9 — port `review`~~ ✓ done
 
 ---
 
-## Step 10 — add `list` and `view` commands to `cli2.py`
+## Step 10 — add `list` and `view` commands to `cli.py`
 
 Both are read-only display commands already partially designed in `steps/view.py`.
 Wire them up using `vault.find_latest` to locate artifacts per node.
@@ -145,6 +134,7 @@ Wire them up using `vault.find_latest` to locate artifacts per node.
 ## Step 11 — delete old engine files and old `cli.py`
 
 Remove:
+
 - `engine/queue.py`
 - `engine/runner.py`
 - `engine/sync_runner.py`

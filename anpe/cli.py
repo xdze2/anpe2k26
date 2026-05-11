@@ -113,9 +113,40 @@ def cmd_llm_eval(
 
 
 @cli.command("review")
-def cmd_review() -> None:
-    """[stub] Interactive user review."""
-    raise NotImplementedError("step 9")
+@click.option(
+    "--do-max", default=None, type=int, help="Max number of companies to review."
+)
+@click.option(
+    "--random", "random_order", is_flag=True, default=False, help="Shuffle order."
+)
+@click.option(
+    "--keep-non-relevant",
+    is_flag=True,
+    default=False,
+    help="Also review nodes with status=not_relevant (skipped by default).",
+)
+@click.option(
+    "--overwrite", is_flag=True, default=False, help="Re-review already-reviewed nodes."
+)
+def cmd_review(
+    do_max: int | None,
+    random_order: bool,
+    keep_non_relevant: bool,
+    overwrite: bool,
+) -> None:
+    """Interactive terminal review of summarized companies."""
+    from anpe.steps.review_step import ReviewStep
+
+    vault = Vault()
+    ran, skipped = run_step(
+        ReviewStep(),
+        vault,
+        do_max=do_max,
+        overwrite=overwrite,
+        keep_non_relevant=keep_non_relevant,
+        random_order=random_order,
+    )
+    console.print(f"review: ran={ran} skipped={skipped}")
 
 
 @cli.command("list")
