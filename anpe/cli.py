@@ -336,6 +336,16 @@ def cmd_list(
     console.print(f"\n[dim]{len(rows)} node(s)[/]")
 
 
+@cli.command("web")
+@click.option("--port", default=5000, type=int, help="Port to listen on.")
+@click.option("--debug", is_flag=True, default=False)
+def cmd_web(port: int, debug: bool) -> None:
+    """Start the web UI."""
+    from anpe.web import app
+
+    app.run(port=port, debug=debug)
+
+
 @cli.command("view")
 @click.argument("node_id")
 def cmd_view(node_id: str) -> None:
