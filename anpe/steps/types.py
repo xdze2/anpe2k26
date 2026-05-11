@@ -12,8 +12,8 @@ class FetchTarget(BaseModel):
 
 class SummarizeResult(BaseModel):
     status: str  # "ok" | "not_relevant" | "no_data"
-    summary: str
-    new_targets: list[FetchTarget]
+    summary: str = ""
+    new_targets: list[FetchTarget] = []
     prompt: str = ""
     version: str = ""
     model: str = ""
