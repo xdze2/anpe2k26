@@ -14,13 +14,14 @@ simply the time the user is available.
 ```mermaid
 flowchart TB
     BOOTSTRAP["👤 Bootstrap"]
-    ENRICH["Enrich : 🌐 Fetch and 🤖 Summarize"]
+    ENRICH["🌐 Fetch and 🤖 Summarize"]
     REVIEW["👤 User review"]
-    EVAL["🤖  Compute rank on all"]
+    EVAL["🤖  Compute rank"]
 
     BOOTSTRAP -- seeds --> ENRICH
     ENRICH -- sample --> REVIEW
     REVIEW -- update user preference --> EVAL
+    ENRICH -- all --> EVAL
     EVAL -- pick best candidates --> ENRICH
 ```
 
