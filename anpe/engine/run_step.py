@@ -26,15 +26,19 @@ def log_appender(vault: Vault, node_id: str | None) -> Generator[Log, None, None
 
 
 def run_step(step: object, vault: Vault, do_max: int | None, **flags: object) -> tuple[int, int]:
-    """Run scan→work loop. Returns (ran, skipped)."""
-    candidates: Iterator[Candidate] = step.scan(vault, **flags)  # type: ignore[union-attr]
+    """Run scan→work loop. Returns (ran, skipped).
+
+    All candidates from scan() are consumed. Candidates with skip=True are
+    counted but never passed to work(). do_max limits only the non-skipped
+    candidates, so already-done items never consume work slots.
+    """
+    all_candidates: list[Candidate] = list(step.scan(vault, **flags))  # type: ignore[union-attr]
+    skipped = sum(1 for c in all_candidates if c.skip)
+    to_run: Iterator[Candidate] = (c for c in all_candidates if not c.skip)
     if do_max is not None:
-        candidates = itertools.islice(candidates, do_max)
-    ran = skipped = 0
-    for candidate in candidates:
-        if candidate.skip:
-            skipped += 1
-            continue
+        to_run = itertools.islice(to_run, do_max)
+    ran = 0
+    for candidate in to_run:
         with log_appender(vault, candidate.node_id) as log:
             try:
                 step.work(candidate.args, vault, log)  # type: ignore[union-attr]

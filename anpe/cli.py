@@ -28,9 +28,15 @@ def cmd_bootstrap(overwrite: bool) -> None:
 
 
 @cli.command("fetch_siren")
-def cmd_fetch_siren() -> None:
-    """[stub] Fetch SIREN data for each company in listing.jsonl."""
-    raise NotImplementedError("step 5")
+@click.option("--do-max", default=None, type=int, help="Max number of companies to fetch.")
+@click.option("--overwrite", is_flag=True, default=False, help="Re-fetch even if output exists.")
+def cmd_fetch_siren(do_max: int | None, overwrite: bool) -> None:
+    """Fetch SIREN registry data for each company in listing.jsonl."""
+    from anpe.steps.fetch_siren_step import FetchSirenStep
+
+    vault = Vault()
+    ran, skipped = run_step(FetchSirenStep(), vault, do_max=do_max, overwrite=overwrite)
+    console.print(f"fetch_siren: ran={ran} skipped={skipped}")
 
 
 @cli.command("fetch_ddg")
