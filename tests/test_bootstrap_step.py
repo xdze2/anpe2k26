@@ -28,13 +28,15 @@ def test_scan_yields_candidate_when_seed_exists_no_output(tmp_path: Path) -> Non
     assert candidates[0].node_id is None
 
 
-def test_scan_yields_nothing_when_output_exists_no_overwrite(tmp_path: Path) -> None:
+def test_scan_yields_skipped_when_output_exists_no_overwrite(tmp_path: Path) -> None:
     vault = _make_vault(tmp_path)
     vault.root.mkdir(parents=True)
     (vault.root / _SEED_URI).write_text("query: test")
     (vault.root / _OUTPUT_URI).write_text("{}")
     step = BootstrapStep()
-    assert list(step.scan(vault)) == []
+    candidates = list(step.scan(vault))
+    assert len(candidates) == 1
+    assert candidates[0].skip is True
 
 
 def test_scan_yields_candidate_when_overwrite_true(tmp_path: Path) -> None:

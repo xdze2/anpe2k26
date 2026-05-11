@@ -10,6 +10,7 @@ Each task is independently testable. Work in order — later tasks build on earl
 - **Step 2 done (2026-05-11):** `Vault.output_uri(node_id, step_name)` added. No `find_latest` — no migration needed, previous vault data deleted.
 - **Step 3 done (2026-05-11):** `engine/run_step.py` created with `run_step` and `log_appender`. 5 tests pass.
 - **Step 4 done (2026-05-11):** `BootstrapStep` rewritten (no Queue). `scan` checks `vault.exists("listing.jsonl")`. `work` writes directly to `vault.root / "listing.jsonl"`. `anpe bootstrap [--overwrite]` wired in `cli.py`. CLI stubs cleaned up. 5 tests pass.
+- **Vault refactor (2026-05-11):** `Vault.store()` replaced by `Vault.write(uri, data, log=None)` — caller supplies the URI directly. `store()` was generating timestamped paths with a redundant `slug` param; now callers use `vault.output_uri()` to build the URI and pass it to `write()`. Bootstrap and all ported steps updated. `Candidate.skip` field added so `scan()` can yield already-done items; `run_step` counts them as skipped without calling `work()`. `skipped=1` now correctly reported on second `anpe bootstrap` run.
 
 ---
 

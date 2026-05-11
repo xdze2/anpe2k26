@@ -19,3 +19,4 @@ Log = Callable[[str], None]
 class Candidate:
     node_id: str | None  # None for process-level steps with no associated node
     args: dict = field(default_factory=dict)  # type: ignore[type-arg]
+    skip: bool = False  # already done; run_step counts it but does not call work()

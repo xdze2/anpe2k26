@@ -18,15 +18,16 @@ class BootstrapStep:
     def scan(self, vault: Vault, overwrite: bool = False, **_: object) -> Iterator[Candidate]:
         if not vault.exists(_SEED_URI):
             return
-        if not overwrite and vault.exists(_OUTPUT_URI):
-            return
-        yield Candidate(node_id=None, args={"seed_uri": _SEED_URI})
+        already_done = vault.exists(_OUTPUT_URI)
+        yield Candidate(
+            node_id=None,
+            args={"seed_uri": _SEED_URI},
+            skip=already_done and not overwrite,
+        )
 
     def work(self, args: dict, vault: Vault, log: Log) -> None:  # type: ignore[type-arg]
         profile_path = vault.root / args["seed_uri"]
         rows = _pipeline_run(profile_path)
         log(f"pipeline returned {len(rows)} rows")
         jsonl_bytes = rows_to_jsonl_bytes(rows)
-        out_path = vault.root / _OUTPUT_URI
-        out_path.write_bytes(jsonl_bytes)
-        log(f"saved {len(jsonl_bytes)} bytes → {_OUTPUT_URI}")
+        vault.write(_OUTPUT_URI, jsonl_bytes, log)

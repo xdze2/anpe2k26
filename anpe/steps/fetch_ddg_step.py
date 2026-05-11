@@ -68,8 +68,8 @@ class FetchDdgStep:
             raise RetryableError(f"blocked: {e}") from e
 
         log(f"fetched {len(raw_data)} chars")
-        uri = vault.store(node_id, self.name, node_id[:8], _RAW_EXT, raw_data.encode())
-        log(f"saved → {uri}")
+        uri = vault.output_uri(node_id, self.name)
+        vault.write(uri, raw_data.encode(), log)
         return {"raw_uri": uri, "tool": _TOOL, "target": target, "siren_uri": args["siren_uri"]}
 
 

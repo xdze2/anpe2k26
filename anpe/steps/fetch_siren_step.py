@@ -70,7 +70,7 @@ class FetchSirenStep:
             raise RetryableError(f"retryable: {e}") from e
 
         log(f"fetched {len(raw_data)} chars")
-        uri = vault.store(node_id, self.name, node_id[:8], "json", raw_data.encode())
-        log(f"saved → {uri}")
+        uri = vault.output_uri(node_id, self.name)
+        vault.write(uri, raw_data.encode(), log)
         return {"raw_uri": uri, "siren": siren}
 

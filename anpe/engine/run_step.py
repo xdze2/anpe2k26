@@ -32,6 +32,9 @@ def run_step(step: object, vault: Vault, do_max: int | None, **flags: object) ->
         candidates = itertools.islice(candidates, do_max)
     ran = skipped = 0
     for candidate in candidates:
+        if candidate.skip:
+            skipped += 1
+            continue
         with log_appender(vault, candidate.node_id) as log:
             try:
                 step.work(candidate.args, vault, log)  # type: ignore[union-attr]
