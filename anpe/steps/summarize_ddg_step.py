@@ -73,6 +73,7 @@ class SummarizeDdgStep:
         payload = {
             "status": result.status,
             "summary": result.summary,
+            "new_targets": [t.model_dump() for t in result.new_targets],
             "model": result.model,
             "version": result.version,
             "prompt": result.prompt,

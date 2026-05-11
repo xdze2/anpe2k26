@@ -7,7 +7,6 @@ Usage:
 Results are printed to stdout and saved to scripts/eval_results/<timestamp>.jsonl
 """
 
-import asyncio
 import json
 import time
 import traceback
@@ -32,7 +31,7 @@ FIXTURES_DIR = Path(__file__).parent / "eval_fixtures"
 FIXTURES: list[dict] = json.loads((FIXTURES_DIR / "fixtures.json").read_text())
 
 
-async def run_one(
+def run_one(
     model_slug: str, raw_data: str, company_profile: str, previous_summary: str
 ) -> tuple[SummarizeResult, float]:
     prompt = ""
@@ -43,12 +42,12 @@ async def run_one(
     prompt += f"## New data\n\n{raw_data}"
 
     t0 = time.monotonic()
-    result = await mistral_run(SummarizeResult, model_slug, _SYSTEM, prompt)
+    result = mistral_run(SummarizeResult, model_slug, _SYSTEM, prompt)
     elapsed = time.monotonic() - t0
     return result, elapsed
 
 
-async def main() -> None:
+def main() -> None:
     results_dir = Path(__file__).parent / "eval_results"
     results_dir.mkdir(exist_ok=True)
     out_file = results_dir / f"{datetime.now().strftime('%Y%m%dT%H%M%S')}.jsonl"
@@ -62,7 +61,7 @@ async def main() -> None:
             for model_slug in MODELS:
                 print(f"\n  model: {model_slug}")
                 try:
-                    result, elapsed = await run_one(
+                    result, elapsed = run_one(
                         model_slug,
                         raw_data,
                         fixture.get("company_profile", ""),
@@ -101,10 +100,10 @@ async def main() -> None:
                 f.write(json.dumps(row, ensure_ascii=False) + "\n")
                 f.flush()
                 print(f"  [delay {CALL_DELAY_S:.0f}s]")
-                await asyncio.sleep(CALL_DELAY_S)
+                time.sleep(CALL_DELAY_S)
 
     print(f"\n\nResults saved to {out_file}")
 
 
 if __name__ == "__main__":
-    asyncio.run(main())
+    main()
