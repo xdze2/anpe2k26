@@ -8,6 +8,8 @@ Each task is independently testable. Work in order — later tasks build on earl
   updated `pyproject.toml` entry point to `anpe.cli:cli`. `anpe --help` verified working.
 - **Step 1 done (2026-05-11):** `engine/types.py` created with `FatalError`, `RetryableError`, `Log`, `Candidate`.
 - **Step 2 done (2026-05-11):** `Vault.output_uri(node_id, step_name)` added. No `find_latest` — no migration needed, previous vault data deleted.
+- **Step 3 done (2026-05-11):** `engine/run_step.py` created with `run_step` and `log_appender`. 5 tests pass.
+- **Step 4 done (2026-05-11):** `BootstrapStep` rewritten (no Queue). `scan` checks `vault.exists("listing.jsonl")`. `work` writes directly to `vault.root / "listing.jsonl"`. `anpe bootstrap [--overwrite]` wired in `cli.py`. CLI stubs cleaned up. 5 tests pass.
 
 ---
 

@@ -1,56 +1,32 @@
-"""bootstrap step — scan seed_query.yaml, produce company listing JSONL in vault."""
+"""bootstrap step — scan seed_query.yaml, produce listing.jsonl in vault root."""
 
 from __future__ import annotations
 
-import hashlib
-
-from anpe.steps.bootstrap.pipeline import rows_to_jsonl_bytes, run as _pipeline_run
-from anpe.engine.queue import Queue
-from anpe.steps import api_throttles
-from anpe.engine.base import Candidate, Log
 from collections.abc import Iterator
+
+from anpe.engine.types import Candidate, Log
 from anpe.engine.vault import Vault
+from anpe.steps.bootstrap.pipeline import rows_to_jsonl_bytes, run as _pipeline_run
 
 _SEED_URI = "seed_query.yaml"
+_OUTPUT_URI = "listing.jsonl"
 
 
 class BootstrapStep:
     name = "bootstrap"
-    version = "v2"
-    description = "From seed_query.yaml produce a company listing JSONL in the vault."
-    rate_gate = api_throttles.NONE
 
-    def scan(
-        self, queue: Queue, vault: Vault, refresh: bool = False, **_: object
-    ) -> Iterator[Candidate]:
-        """Emit one candidate keyed on the profile's content hash.
-
-        Suppressed if a done event already exists for these args, unless
-        refresh=True (which forces re-emission for use with put --force).
-        """
+    def scan(self, vault: Vault, overwrite: bool = False, **_: object) -> Iterator[Candidate]:
         if not vault.exists(_SEED_URI):
             return
-        profile_bytes = vault.load(_SEED_URI)
-        profile_hash = hashlib.sha256(profile_bytes).hexdigest()[:16]
-        args = {
-            "profile_hash": profile_hash,
-            "seed_uri": _SEED_URI,
-            "refresh": False,
-        }
-        if not refresh and queue.is_done(self.name, self.version, args):
+        if not overwrite and vault.exists(_OUTPUT_URI):
             return
-        yield Candidate(step=self.name, node_id=None, args=args)
+        yield Candidate(node_id=None, args={"seed_uri": _SEED_URI})
 
-    async def work(self, args: dict, vault: Vault, log: Log) -> dict:  # type: ignore[type-arg]
+    def work(self, args: dict, vault: Vault, log: Log) -> None:  # type: ignore[type-arg]
         profile_path = vault.root / args["seed_uri"]
-        refresh = bool(args.get("refresh", False))
-
-        log(f"profile_hash={args['profile_hash']}  refresh={refresh}")
-        rows = _pipeline_run(profile_path, refresh=refresh)
+        rows = _pipeline_run(profile_path)
         log(f"pipeline returned {len(rows)} rows")
-
         jsonl_bytes = rows_to_jsonl_bytes(rows)
-        uri = vault.store(None, self.name, "listing", "jsonl", jsonl_bytes)
-        log(f"saved {len(jsonl_bytes)} bytes → {uri}")
-
-        return {"listing_uri": uri, "count": len(rows)}
+        out_path = vault.root / _OUTPUT_URI
+        out_path.write_bytes(jsonl_bytes)
+        log(f"saved {len(jsonl_bytes)} bytes → {_OUTPUT_URI}")
