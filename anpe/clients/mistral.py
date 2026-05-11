@@ -5,7 +5,7 @@ from __future__ import annotations
 import json
 from typing import TypeVar
 
-from pydantic import BaseModel
+from pydantic import BaseModel, ValidationError
 
 from mistralai.client import Mistral
 from mistralai.client.errors import SDKError
@@ -56,4 +56,9 @@ mistral_complete = RateLimiter(_mistral_complete, min_interval_s=1.0)
 def mistral_run(output_type: type[T], model: str, system: str, prompt: str) -> T:
     messages = [{"role": "system", "content": system}, {"role": "user", "content": prompt}]
     content = mistral_complete(model, messages)
-    return output_type.model_validate(json.loads(content))
+    try:
+        return output_type.model_validate(json.loads(content))
+    except ValidationError as e:
+        raise ValueError(
+            f"LLM response failed validation for {output_type.__name__}:\n{e}\n\nRaw response:\n{content}"
+        ) from e

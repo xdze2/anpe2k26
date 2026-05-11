@@ -59,7 +59,15 @@ class SummarizeDdgStep:
         siren_raw = json.loads(vault.load(siren_uri).decode())
         company_profile = _fmt_company_profile(siren_raw)
 
-        result = ddg_summarize(raw_data, "", company_profile)
+        try:
+            result = ddg_summarize(raw_data, "", company_profile)
+        except ValueError as e:
+            log(f"summarize error: {e}")
+            payload = {"status": "error", "error": str(e)}
+            uri = vault.output_uri(node_id, self.name)
+            vault.write(uri, json.dumps(payload, indent=2, ensure_ascii=False).encode(), log)
+            return
+
         log(f"summarize done  status={result.status}  model={result.model}")
 
         payload = {

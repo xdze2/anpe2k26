@@ -58,7 +58,7 @@ def test_scan_overwrite_marks_skip_false(tmp_path: Path) -> None:
     assert candidates[0].skip is False
 
 
-def test_scan_skips_not_relevant_by_default(tmp_path: Path) -> None:
+def test_scan_excludes_non_ok_statuses(tmp_path: Path) -> None:
     vault = _make_vault(tmp_path)
     node_ok = "acme_corp_12345678"
     node_nr = "esn_corp_87654321"
@@ -68,15 +68,6 @@ def test_scan_skips_not_relevant_by_default(tmp_path: Path) -> None:
     node_ids = [c.node_id for c in candidates]
     assert node_ok in node_ids
     assert node_nr not in node_ids
-
-
-def test_scan_keep_non_relevant_includes_not_relevant(tmp_path: Path) -> None:
-    vault = _make_vault(tmp_path)
-    node_nr = "esn_corp_87654321"
-    _write(vault, vault.output_uri(node_nr, "summarize_ddg"), _SUMMARY_NOT_RELEVANT)
-    candidates = list(ReviewStep().scan(vault, keep_non_relevant=True))
-    assert len(candidates) == 1
-    assert candidates[0].skip is False
 
 
 def test_scan_includes_siren_and_eval_uris_when_present(tmp_path: Path) -> None:

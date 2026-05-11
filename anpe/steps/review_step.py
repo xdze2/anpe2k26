@@ -36,7 +36,6 @@ class ReviewStep:
         self,
         vault: Vault,
         overwrite: bool = False,
-        keep_non_relevant: bool = False,
         random_order: bool = False,
         **_: object,
     ) -> Iterator[Candidate]:
@@ -49,13 +48,12 @@ class ReviewStep:
             node_id = summary_path.parent.name
             summary_uri = str(summary_path.relative_to(vault.root))
 
-            if not keep_non_relevant:
-                try:
-                    data = json.loads(summary_path.read_bytes())
-                    if data.get("status") == "not_relevant":
-                        continue
-                except Exception:
-                    pass
+            try:
+                data = json.loads(summary_path.read_bytes())
+                if data.get("status") != "ok":
+                    continue
+            except Exception:
+                pass
 
             siren_uri: str | None = None
             siren_paths = list(summary_path.parent.glob(f"{_SIREN_STEP}_*.json"))

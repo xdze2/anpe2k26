@@ -93,14 +93,8 @@ def cmd_summarize_ddg(do_max: int | None, overwrite: bool) -> None:
 @click.option(
     "--overwrite", is_flag=True, default=False, help="Re-eval even if output exists."
 )
-@click.option(
-    "--keep-non-relevant",
-    is_flag=True,
-    default=False,
-    help="Also eval nodes with status=not_relevant (skipped by default).",
-)
 def cmd_llm_eval(
-    do_max: int | None, overwrite: bool, keep_non_relevant: bool = False
+    do_max: int | None, overwrite: bool
 ) -> None:
     """Score each summarized company against the user profile."""
     from anpe.steps.eval_step import EvalStep
@@ -111,7 +105,6 @@ def cmd_llm_eval(
         vault,
         do_max=do_max,
         overwrite=overwrite,
-        keep_non_relevant=keep_non_relevant,
     )
     console.print(f"llm_eval: ran={ran} skipped={skipped}")
 
@@ -124,18 +117,11 @@ def cmd_llm_eval(
     "--random", "random_order", is_flag=True, default=False, help="Shuffle order."
 )
 @click.option(
-    "--keep-non-relevant",
-    is_flag=True,
-    default=False,
-    help="Also review nodes with status=not_relevant (skipped by default).",
-)
-@click.option(
     "--overwrite", is_flag=True, default=False, help="Re-review already-reviewed nodes."
 )
 def cmd_review(
     do_max: int | None,
     random_order: bool,
-    keep_non_relevant: bool,
     overwrite: bool,
 ) -> None:
     """Interactive terminal review of summarized companies."""
@@ -147,19 +133,12 @@ def cmd_review(
         vault,
         do_max=do_max,
         overwrite=overwrite,
-        keep_non_relevant=keep_non_relevant,
         random_order=random_order,
     )
     console.print(f"review: ran={ran} skipped={skipped}")
 
 
 @cli.command("list")
-@click.option(
-    "--keep-non-relevant",
-    is_flag=True,
-    default=False,
-    help="Include nodes with status=not_relevant.",
-)
 @click.option("--nbr", default=None, type=int, help="Max rows to show.")
 @click.option(
     "--sort-field",
@@ -174,7 +153,6 @@ def cmd_review(
     help="Filter by pipeline stage reached.",
 )
 def cmd_list(
-    keep_non_relevant: bool,
     nbr: int | None,
     sort_field: str,
     state: str | None,
@@ -218,7 +196,7 @@ def cmd_list(
         except Exception:
             sum_data = {}
 
-        if not keep_non_relevant and sum_data.get("status") == "not_relevant":
+        if sum_data.get("status") != "ok":
             continue
 
         eval_paths = list(node_dir.glob("eval_*.json"))

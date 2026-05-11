@@ -22,7 +22,6 @@ class EvalStep:
         self,
         vault: Vault,
         overwrite: bool = False,
-        keep_non_relevant: bool = False,
         **_: object,
     ) -> Iterator[Candidate]:
         nodes_dir = vault.root / "nodes"
@@ -36,10 +35,9 @@ class EvalStep:
             node_id = summary_path.parent.name
             summary_uri = str(summary_path.relative_to(vault.root))
 
-            is_not_relevant = False
-            if not keep_non_relevant:
-                data = json.loads(summary_path.read_bytes())
-                is_not_relevant = data.get("status") == "not_relevant"
+            data = json.loads(summary_path.read_bytes())
+            if data.get("status") != "ok":
+                continue
 
             eval_uri = vault.output_uri(node_id, self.name)
             yield Candidate(
@@ -49,7 +47,7 @@ class EvalStep:
                     "summary_uri": summary_uri,
                     "profile_uri": _PROFILE_URI,
                 },
-                skip=is_not_relevant or (vault.exists(eval_uri) and not overwrite),
+                skip=vault.exists(eval_uri) and not overwrite,
             )
 
     def work(self, args: dict, vault: Vault, log: Log) -> None:  # type: ignore[type-arg]
