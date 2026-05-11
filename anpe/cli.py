@@ -7,6 +7,7 @@ from rich.console import Console
 
 from anpe.engine.run_step import run_step
 from anpe.engine.vault import Vault
+from anpe.tools.geo_api import search_cities
 
 console = Console()
 
@@ -14,6 +15,9 @@ console = Console()
 @click.group()
 def cli() -> None:
     """ANPE -- Assistant Numerique Pour l'Emploi."""
+
+
+cli.add_command(search_cities, name="geo-search")
 
 
 @cli.command("bootstrap")
