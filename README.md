@@ -47,7 +47,4 @@ User data (companies, profile, logs) lives in `user_data/` — gitignored.
 ## More
 
 - [Vision and goals](docs/specs/10_vision.md)
-- [Usage examples](docs/specs/20_usage_examples.md)
-- [Architecture and design](docs/specs/40_design.md)
-- [Enrichment pipeline](docs/specs/42_enrichment_design_v2.md)
 - [Full spec index](docs/specs/README.md)
