@@ -1,126 +1,204 @@
-# Engine — follow-up todo
+# Implementation plan: one-command-per-step architecture
 
-After the data-engine refactor and partial cleanup. New items come from the
-broad-view design review on 2026-05-09 (see dev log of that day for context).
-Tackle top-down; each item is independently shippable.
+Each task is independently testable. Work in order — later tasks build on earlier ones.
+
+## Done
+
+- **cli.py cleanup (2026-05-11):** deleted old `cli.py` (stubs only), renamed `cli2.py` → `cli.py`,
+  updated `pyproject.toml` entry point to `anpe.cli:cli`. `anpe --help` verified working.
 
 ---
 
-## P1 — design moves with the highest leverage
+## Step 1 — `engine/types.py`: thin shared types
 
-- [-] **Make the step graph explicit via `inputs_from`.**
-  Today every `scan()` opens with `for ev in queue.done_events(_UPSTREAM):` where
-  `_UPSTREAM` is a private string constant. The pipeline shape
-  `bootstrap → fetch_siren → fetch_ddg → summarize_ddg → eval → review` lives
-  nowhere as data — only by grep. Lift it to `Step.inputs_from: list[str]`
-  alongside `name`/`version`. Unblocks the auto-loop driver, `anpe steps --graph`
-  visualization, and registry-time validation that referenced upstreams exist.
-  - Files: [fetch_ddg_step.py:16](anpe/steps/fetch_ddg_step.py#L16),
-    [summarize_ddg_step.py:15](anpe/steps/summarize_ddg_step.py#L15),
-    [eval_step.py:14](anpe/steps/eval_step.py#L14),
-    [review_step.py:17](anpe/steps/review_step.py#L17),
-    [fetch_siren_step.py:15-16](anpe/steps/fetch_siren_step.py#L15-L16),
-    [engine/base.py](anpe/engine/base.py), [engine/registry.py](anpe/engine/registry.py)
+Create `anpe/engine/types.py` with just three things:
 
-> no need to resolve the graph, we can just iter over step.work until done
+```python
+class FatalError(Exception): ...
+class RetryableError(Exception): ...
+Log = Callable[[str], None]
+```
 
-- [x] **Make `node_id` optional on `Candidate` and queue rows; drop the `_bootstrap` sentinel.**
-      Steps are all process-level objects — the `node_id` is an argument to a
-      particular _run_, not a property of the step. Bootstrap just has no node to
-      attach to. The `_bootstrap` string is a workaround for `node_id: str` being
-      non-optional, not a meaningful concept.
-      Change: `Candidate.node_id: str | None` (None = no associated node).
-      Queue: `node_id` column stays `TEXT`, stored as `""` or `NULL` when absent —
-      decide which and be consistent. Vault: flip the directory order to
-      `user_vault/{step}/{node_id}/...`; for node-less runs omit the `node_id/`
-      segment, giving `user_vault/bootstrap/...` naturally.
-      Delete `_NODE_ID = "_bootstrap"` from bootstrap_step; pass `node_id=None`.
-  - [bootstrap_step.py:17](anpe/steps/bootstrap_step.py#L17) — delete `_NODE_ID`, pass `node_id=None` to `Candidate` and `vault.store`
-  - [engine/base.py:26](anpe/engine/base.py#L26) — `Candidate.node_id: str | None`
-  - [engine/queue.py:49](anpe/engine/queue.py#L49) — `Item.node_id: str | None`; schema: allow NULL
-  - [engine/vault.py:27](anpe/engine/vault.py#L27) — `store(node_id: str | None, ...)`, URI becomes `{step}/{node_id}/...` or `{step}/...`
+Also add a `Candidate` dataclass: `node_id: str | None`, `args: dict`. No `step`
+field, no `context` field.
 
-- [x] **`scan()` returns `Iterator[Candidate]` instead of `list[Candidate]`.**
-      Three steps already paper over the eager-list problem with a `count: int = 10`
-      parameter — invisible at the CLI, hardcoded, only on some steps. After
-      bootstrap with thousands of companies, scan walks all of them eagerly.
-      A generator makes scan lazy: caller pulls until budget is exhausted, the
-      `count` flag goes away, and `fetch_ddg.scan` stops loading every siren JSON
-      upfront. CLI `scan | put | run` works unchanged (one candidate per line).
-  - Files: all `*_step.py` `scan()` methods, [engine/base.py](anpe/engine/base.py),
-    [cli.py:432, 567](anpe/cli.py#L432)
+Keep `engine/vault.py` and `engine/rate_gate.py` untouched.
 
-- [x] **Per-rate-gate budgets in the runner.**
-      `--budget` renamed to `--gate-budget name=N` (repeatable) on `run` and `step`.
-      `RateGate.set_budget(n)` decrements under the existing lock; raises `BudgetExhausted`
-      when zero — caught by the runner as a clean stop, item left retryable.
-      Item-count cap moved to `--max-items`. Race condition in `_worker` fixed
-      (two consecutive lock blocks collapsed into one atomic check).
-  - Files: [engine/rate_gate.py](anpe/engine/rate_gate.py),
-    [engine/runner.py](anpe/engine/runner.py),
-    [steps/api_throttles.py](anpe/steps/api_throttles.py), [cli.py](anpe/cli.py)
+**Test:** import `FatalError`, `RetryableError`, `Candidate` from `engine.types`. No
+import of `queue` or `runner` needed.
 
-- [ ] **`anpe loop` — drive the whole graph to quiescence.**
-      Falls out almost for free once `inputs_from` and gate-budgets exist. Walks
-      the graph topologically, scan+put each step, run, re-scan downstream
-      (newly-done items unlock new candidates), repeat until quiescent or any
-      budget hits zero. Replaces the current 5-command session ritual
-      (`step bootstrap`, `step fetch_siren`, ...).
-      Intent stays explicit — the user invokes `anpe loop`; the engine still does
-      not auto-trigger between sessions.
-  - Files: [cli.py](anpe/cli.py), new driver in [engine/](anpe/engine/)
+---
 
-## P2 — leftover from the prior pass
+## Step 2 — `Vault`: add `find_latest` helper + fixed output URIs
 
-- [ ] **`BootstrapStep.refresh` is silently broken.**
-      `args["refresh"]` is hardcoded to `False` at scan time, so `work()` never
-      refreshes even if `scan(refresh=True)` is called. Drop `refresh` from `args`
-      entirely (it is a scan-time decision); pass it via a different path or
-      reconsider whether `force=True` on `put` is the right primitive for "re-run
-      anyway."
-  - File: [bootstrap_step.py:25-48](anpe/steps/bootstrap_step.py#L25-L48)
+The new `scan()` in every step needs to locate the latest artifact for a node without
+querying the queue. Add two helpers to `Vault`:
 
-- [ ] **Reconcile Queue interface (spec vs. code).**
-      Spec lists `mark_done(uid, outputs)` etc.; code requires extra `step, node_id`
-      args. Decide: either denormalise (queue looks up step/node_id from the put
-      event) or update the spec.
-  - Files: [13_data_engine.md:280-288](docs/specs/13_data_engine.md#L280-L288),
-    [queue.py:127-140](anpe/engine/queue.py#L127-L140)
+- `find_latest(node_id, step_name) -> str | None` — glob
+  `nodes/<node_id>/<step_name>_*.json` and return the path of the newest file
+  (by filename sort or mtime), or `None` if none exist.
+- `output_uri(node_id, step_name) -> str` — return the canonical fixed path
+  `nodes/<node_id>/<step_name>_<node_id[:8]>.json` (no timestamp). This is what the
+  new `work()` writes to; `vault.exists(uri)` is the done check.
 
-- [ ] **`targets/` log loop-back: implement or delete from spec.**
-      Spec describes summarize → new_targets → fetch loop-back; pipeline doesn't
-      do it. Decide which.
-  - Files: [13_data_engine.md:198-204, 441-455](docs/specs/13_data_engine.md#L198-L204)
+The new architecture drops content-addressed timestamped URIs for per-node step
+outputs. One file per node per step, overwritten when `--overwrite` is passed.
 
-- [ ] **Wire `prospect review` to `ReviewStep`.**
-      CLI command currently prints a placeholder ([cli.py:221-233](anpe/cli.py#L221-L233)).
+**Test:** unit-test both helpers against a temp-dir vault with a few fixture files.
 
-- [ ] **Retire `node_dir.py`.**
-      Legacy filesystem helpers still imported by `prospect list/status/show/map`.
-      Once those commands are ported to read from queue + vault, the module goes.
-  - File: [anpe/node_dir.py](anpe/node_dir.py)
+---
 
-## P3 — small cleanups
+## Step 3 — shared CLI loop helper `run_step`
 
-- [ ] **De-duplicate `node_id`.**
-      Stored on `Candidate.node_id` _and_ injected into `args["node_id"]` by every
-      step except bootstrap. Work functions read `args["node_id"]`. Pick one — keep
-      it on the queue row (the partition key), pass to `work(node_id, args, ...)`
-      as a separate argument. Removes the inconsistency and ~5 redundant lines.
-  - Files: all `*_step.py`
+Create `anpe/engine/run_step.py`:
 
-- [ ] **`Args = dict[str, Any]` / `Outputs = dict[str, Any]` aliases.**
-      Removes ~15 `# type: ignore[type-arg]` comments across the engine and steps.
-  - File: [engine/base.py](anpe/engine/base.py)
+```python
+def run_step(step, vault, do_max, **flags) -> tuple[int, int]:
+    """Run scan→work loop. Returns (ran, skipped)."""
+    candidates = step.scan(vault, **flags)
+    if do_max is not None:
+        candidates = itertools.islice(candidates, do_max)
+    ran = skipped = 0
+    for candidate in candidates:
+        with log_appender(vault, candidate.node_id) as log:
+            try:
+                step.work(candidate.args, vault, log)
+                ran += 1
+            except FatalError as e:
+                log(f"fatal: {e}")
+                skipped += 1
+            except RetryableError as e:
+                log(f"retry: {e}")
+                skipped += 1
+    return ran, skipped
+```
 
-- [ ] **Document the `_attempted` / `skip_uids` contract on `Queue.claim`.**
-      The "no within-session retries" rule is invisible from the queue API.
-  - Files: [queue.py:81](anpe/engine/queue.py#L81), [runner.py:48](anpe/engine/runner.py#L48)
+`log_appender` opens (appends to) `user_vault/nodes/<node_id>/node.log` or
+`user_vault/node.log` for process-level steps.
 
-## P4 — flagged, not yet worth fixing
+**Test:** pass a mock step with a `scan()` that yields two candidates and a `work()`
+that records calls. Verify counts and that the log file is created.
 
-- [ ] **Cursor for `done_events`.**
-      `queue.done_events("fetch_siren")` returns _all_ historical done events
-      forever; scan I/O grows linearly with corpus size. Eventually want
-      "scan since event id N." Premature today.
-  - File: [queue.py:215-221](anpe/engine/queue.py#L215-L221)
+---
+
+## Step 4 — port `bootstrap`
+
+Rewrite `BootstrapStep.scan` to replace `queue.is_done(...)` with
+`vault.exists("listing.jsonl")`. Drop `refresh` arg (use `--overwrite` flag instead).
+
+`work` writes directly to `vault.root / "listing.jsonl"` (overwrite, not
+content-addressed).
+
+Wire up `anpe bootstrap [--overwrite]` in `cli2.py`.
+
+**Test:** `scan` returns no candidate when `listing.jsonl` exists and `overwrite=False`;
+returns one candidate otherwise.
+
+---
+
+## Step 5 — port `fetch_siren` end-to-end
+
+Rewrite `FetchSirenStep` so it no longer touches `Queue`:
+
+- `scan(vault, overwrite, **_)`: reads `listing.jsonl` directly from
+  `vault.root / "listing.jsonl"`; for each row checks
+  `vault.exists(vault.output_uri(node_id, self.name))`; yields `Candidate` only when
+  output is missing (or `overwrite=True`).
+- `work(args, vault, log)`: fetch siren, write to
+  `vault.output_uri(node_id, self.name)` using `vault.root / uri` directly (not
+  `vault.store()`, which was write-once). Drop the `async` — make it a plain sync
+  method.
+
+Wire up `anpe fetch_siren [--do-max N] [--overwrite]` in `cli2.py` using `run_step`.
+
+**Test:**
+1. `scan` yields nodes from listing, skips those with existing output files.
+2. `work` writes a file; re-running `scan` with `overwrite=False` skips it.
+3. CLI smoke test: run `anpe fetch_siren --do-max 0` and check it prints a summary
+   line without errors.
+
+---
+
+## Step 6 — port `fetch_ddg`
+
+Same pattern as `fetch_siren`. `scan` globs `nodes/*/` for nodes that have a
+`fetch_siren_*.json` but no `fetch_ddg_*.json` (or use `vault.output_uri`).
+
+Wire up `anpe fetch_ddg [--do-max N] [--overwrite]` in `cli2.py`.
+
+**Test:** scan yields nodes that have siren but no ddg output; skips the rest.
+
+---
+
+## Step 7 — port `summarize_ddg`
+
+`scan` finds nodes with `fetch_ddg` output but no `summarize_ddg` output. Loads
+siren + ddg files using `vault.find_latest`. Calls `summarize_fn.ddg_summarize`.
+
+Wire up `anpe summarize_ddg [--do-max N] [--overwrite]` in `cli2.py`.
+
+**Test:** scan skips node that already has summary; yields node that doesn't.
+
+---
+
+## Step 8 — port `llm_eval`
+
+`scan` finds nodes with summarize output and `status == "ok"` (unless
+`skip_non_relevant=False`) but no eval output.
+
+Wire up `anpe llm_eval [--overwrite] [--skip-non-relevant]` in `cli2.py`.
+
+**Test:** scan skips `not_relevant` nodes when flag is set; yields `ok` nodes.
+
+---
+
+## Step 9 — port `review`
+
+`scan` finds nodes with summarize output but no user-review output. Supports
+`--random` (shuffle before `islice`).
+
+`work` is interactive: renders the node card via `view.py`, calls `questionary.select`,
+writes `user_review_<node_id[:8]>.json`.
+
+Wire up `anpe review [--do-max N] [--random] [--skip-non-relevant] [--overwrite]`
+in `cli2.py`.
+
+**Test:** `scan` skips already-reviewed nodes. `work` is hard to unit-test; manual
+smoke test suffices.
+
+---
+
+## Step 10 — add `list` and `view` commands to `cli2.py`
+
+Both are read-only display commands already partially designed in `steps/view.py`.
+Wire them up using `vault.find_latest` to locate artifacts per node.
+
+`anpe list [--skip-non-relevant] [--nbr N] [--sort-field FIELD] [--state STATE]`
+`anpe view <node_id>`
+
+**Test:** run against the real vault and verify no crash.
+
+---
+
+## Step 11 — delete old engine files and old `cli.py`
+
+Remove:
+- `engine/queue.py`
+- `engine/runner.py`
+- `engine/sync_runner.py`
+- `engine/registry.py`
+- `engine/base.py`
+- `cli.py` (replaced by `cli2.py`)
+
+No `pyproject.toml` change needed — entry point already points to `cli:cli`.
+
+**Test:** `uv run anpe --help` works; all remaining tests pass.
+
+---
+
+## Step 12 — update tests
+
+- Delete `test_engine_queue.py` and `test_engine_runner.py`.
+- Rewrite `test_engine_steps.py` to test new `scan()` signatures directly (no Queue
+  mock needed — just a temp-dir Vault and fixture files).
+- Verify `uv run pytest` passes clean.

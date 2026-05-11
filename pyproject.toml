@@ -23,7 +23,7 @@ include = ["anpe*"]
 package = true
 
 [project.scripts]
-anpe = "anpe.cli:run"
+anpe = "anpe.cli:cli"
 
 [dependency-groups]
 dev = [

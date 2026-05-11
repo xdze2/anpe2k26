@@ -150,3 +150,13 @@ directly and don't touch the engine.
    → llm_eval → review.
 5. Delete old engine files and old `cli.py`.
 6. Update tests.
+
+## Progress
+
+See `todo.md` for the detailed step-by-step plan.
+
+**2026-05-11 — CLI cleanup done:**
+Deleted old `cli.py` (it was stubs only, no real code), renamed `cli2.py` → `cli.py`,
+updated `pyproject.toml` entry point from `anpe.cli:run` to `anpe.cli:cli`.
+`anpe --help` verified working. Bootstrap order in the plan corrected: `bootstrap`
+must run before `fetch_siren` since it produces `listing.jsonl`.
