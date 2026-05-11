@@ -93,9 +93,7 @@ def cmd_summarize_ddg(do_max: int | None, overwrite: bool) -> None:
 @click.option(
     "--overwrite", is_flag=True, default=False, help="Re-eval even if output exists."
 )
-def cmd_llm_eval(
-    do_max: int | None, overwrite: bool
-) -> None:
+def cmd_llm_eval(do_max: int | None, overwrite: bool) -> None:
     """Score each summarized company against the user profile."""
     from anpe.steps.eval_step import EvalStep
 
@@ -144,7 +142,7 @@ def cmd_review(
     "--sort-field",
     default="node_id",
     type=click.Choice(["node_id", "score", "reaction"]),
-    help="Sort column.",
+    help="Sort field.",
 )
 @click.option(
     "--state",
@@ -152,23 +150,36 @@ def cmd_review(
     type=click.Choice(["reviewed", "evaled", "summarized", "any"]),
     help="Filter by pipeline stage reached.",
 )
+@click.option("--export", default=None, type=click.Path(), help="Export to CSV file.")
 def cmd_list(
     nbr: int | None,
     sort_field: str,
     state: str | None,
+    export: str | None,
 ) -> None:
-    """Print a formatted table of all companies in the vault."""
+    """List all companies in the vault."""
     import json
-
-    from rich.table import Table
+    import re
 
     from anpe.engine.vault import Vault
 
-    vault = Vault()
-    nodes_dir = vault.root / "nodes"
-    if not nodes_dir.exists():
-        console.print("[dim]no nodes found.[/]")
-        return
+    _HEADCOUNT_BANDS: dict[str, str] = {
+        "00": "0",
+        "01": "1-2",
+        "02": "3-5",
+        "03": "6-9",
+        "11": "10-19",
+        "12": "20-49",
+        "21": "50-99",
+        "22": "100-199",
+        "31": "200-249",
+        "32": "250-499",
+        "41": "500-999",
+        "42": "1000-1999",
+        "51": "2000-4999",
+        "52": "5000-9999",
+        "53": "10000+",
+    }
 
     _SCORE_COLOR = {
         "good": "green",
@@ -176,6 +187,20 @@ def cmd_list(
         "discard": "red",
         "enrich": "blue",
     }
+
+    def _extract_summary_snippet(summary: str) -> str:
+        """Extract Type/Marché tags from the first line of the DDG summary."""
+        if not summary:
+            return ""
+        first_line = summary.split("\n")[0]
+        # strip bold markers, keep values
+        return re.sub(r"\*\*[^*]+\*\*:\s*", "", first_line).strip()
+
+    vault = Vault()
+    nodes_dir = vault.root / "nodes"
+    if not nodes_dir.exists():
+        console.print("[dim]no nodes found.[/]")
+        return
 
     rows = []
     for node_dir in sorted(nodes_dir.iterdir()):
@@ -187,17 +212,34 @@ def cmd_list(
         if not summary_paths:
             if state not in (None, "any"):
                 continue
-            rows.append({"node_id": node_id, "score": "", "reaction": "", "fit": ""})
+            rows.append(
+                {
+                    "node_id": node_id,
+                    "name": "",
+                    "size": "",
+                    "info": "",
+                    "reaction": "",
+                    "score": "",
+                    "fit": "",
+                }
+            )
             continue
 
-        summary_path = summary_paths[0]
         try:
-            sum_data = json.loads(summary_path.read_bytes())
+            sum_data = json.loads(summary_paths[0].read_bytes())
         except Exception:
             sum_data = {}
 
         if sum_data.get("status") != "ok":
             continue
+
+        siren_paths = list(node_dir.glob("fetch_siren_*.json"))
+        siren_data: dict = {}  # type: ignore[type-arg]
+        if siren_paths:
+            try:
+                siren_data = json.loads(siren_paths[0].read_bytes())
+            except Exception:
+                pass
 
         eval_paths = list(node_dir.glob("eval_*.json"))
         eval_data: dict = {}  # type: ignore[type-arg]
@@ -224,11 +266,20 @@ def cmd_list(
         if state is not None and state != "any" and reached != state:
             continue
 
+        siege = siren_data.get("siege", {})
+        nom_legal = siren_data.get("nom_complet", "")
+        name = siege.get("nom_commercial") or nom_legal or node_id
+        size_code = siren_data.get("tranche_effectif_salarie", "")
+        size = _HEADCOUNT_BANDS.get(size_code, size_code) if size_code else ""
+
         rows.append(
             {
                 "node_id": node_id,
-                "score": eval_data.get("score", ""),
+                "name": name,
+                "size": size,
+                "info": _extract_summary_snippet(sum_data.get("summary", "")),
                 "reaction": review_data.get("reaction", ""),
+                "score": eval_data.get("score", ""),
                 "fit": eval_data.get("fit", ""),
             }
         )
@@ -244,20 +295,45 @@ def cmd_list(
     if nbr is not None:
         rows = rows[:nbr]
 
-    table = Table(show_header=True, header_style="bold")
-    table.add_column("node_id", style="dim")
-    table.add_column("score", width=8)
-    table.add_column("reaction", width=14)
-    table.add_column("fit")
+    if export:
+        import csv
+
+        path = export
+        with open(path, "w", newline="", encoding="utf-8") as f:
+            writer = csv.DictWriter(
+                f,
+                fieldnames=[
+                    "node_id",
+                    "name",
+                    "size",
+                    "info",
+                    "reaction",
+                    "score",
+                    "fit",
+                ],
+            )
+            writer.writeheader()
+            writer.writerows(rows)
+        console.print(f"[dim]exported {len(rows)} row(s) to {path}[/]")
+        return
 
     for row in rows:
         score = row["score"]
+        reaction = row["reaction"]
         color = _SCORE_COLOR.get(score, "")
-        score_cell = f"[{color}]{score}[/]" if color else score
-        table.add_row(row["node_id"], score_cell, row["reaction"], row["fit"])
+        score_tag = f"[{color}]{score}[/]" if color else score
 
-    console.print(table)
-    console.print(f"[dim]{len(rows)} node(s)[/]")
+        name_part = (
+            f"[bold]{row['name']}[/]" if row["name"] else f"[dim]{row['node_id']}[/]"
+        )
+        size_part = f"  [dim]{row['size']}[/]" if row["size"] else ""
+        reaction_part = f"  [cyan]{reaction}[/]" if reaction else ""
+        info_part = f"  [dim]{row['info']}[/]" if row["info"] else ""
+
+        console.print(f"--- {name_part}{size_part}{reaction_part}{info_part}")
+        console.print(f"        {score_tag}  {row['fit']}")
+
+    console.print(f"\n[dim]{len(rows)} node(s)[/]")
 
 
 @cli.command("view")
