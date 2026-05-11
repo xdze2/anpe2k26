@@ -6,45 +6,8 @@ Each task is independently testable. Work in order — later tasks build on earl
 
 - **cli.py cleanup (2026-05-11):** deleted old `cli.py` (stubs only), renamed `cli2.py` → `cli.py`,
   updated `pyproject.toml` entry point to `anpe.cli:cli`. `anpe --help` verified working.
-
----
-
-## Step 1 — `engine/types.py`: thin shared types
-
-Create `anpe/engine/types.py` with just three things:
-
-```python
-class FatalError(Exception): ...
-class RetryableError(Exception): ...
-Log = Callable[[str], None]
-```
-
-Also add a `Candidate` dataclass: `node_id: str | None`, `args: dict`. No `step`
-field, no `context` field.
-
-Keep `engine/vault.py` and `engine/rate_gate.py` untouched.
-
-**Test:** import `FatalError`, `RetryableError`, `Candidate` from `engine.types`. No
-import of `queue` or `runner` needed.
-
----
-
-## Step 2 — `Vault`: add `find_latest` helper + fixed output URIs
-
-The new `scan()` in every step needs to locate the latest artifact for a node without
-querying the queue. Add two helpers to `Vault`:
-
-- `find_latest(node_id, step_name) -> str | None` — glob
-  `nodes/<node_id>/<step_name>_*.json` and return the path of the newest file
-  (by filename sort or mtime), or `None` if none exist.
-- `output_uri(node_id, step_name) -> str` — return the canonical fixed path
-  `nodes/<node_id>/<step_name>_<node_id[:8]>.json` (no timestamp). This is what the
-  new `work()` writes to; `vault.exists(uri)` is the done check.
-
-The new architecture drops content-addressed timestamped URIs for per-node step
-outputs. One file per node per step, overwritten when `--overwrite` is passed.
-
-**Test:** unit-test both helpers against a temp-dir vault with a few fixture files.
+- **Step 1 done (2026-05-11):** `engine/types.py` created with `FatalError`, `RetryableError`, `Log`, `Candidate`.
+- **Step 2 done (2026-05-11):** `Vault.output_uri(node_id, step_name)` added. No `find_latest` — no migration needed, previous vault data deleted.
 
 ---
 

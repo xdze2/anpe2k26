@@ -47,3 +47,7 @@ class Vault:
 
     def exists(self, uri: str) -> bool:
         return (self.root / uri).exists()
+
+    def output_uri(self, node_id: str, step_name: str) -> str:
+        """Return the canonical output path for a node/step pair."""
+        return f"nodes/{node_id}/{step_name}_{node_id[:8]}.json"

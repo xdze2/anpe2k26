@@ -155,6 +155,10 @@ directly and don't touch the engine.
 
 See `todo.md` for the detailed step-by-step plan.
 
+**2026-05-11 — No migration needed:** previous vault data deleted; all steps will
+be re-run from scratch. `find_latest` helper dropped from Step 2 — `output_uri` is
+the only addition to `Vault`.
+
 **2026-05-11 — CLI cleanup done:**
 Deleted old `cli.py` (it was stubs only, no real code), renamed `cli2.py` → `cli.py`,
 updated `pyproject.toml` entry point from `anpe.cli:run` to `anpe.cli:cli`.
