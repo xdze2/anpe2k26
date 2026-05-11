@@ -54,7 +54,7 @@ def test_work_writes_listing_jsonl(tmp_path: Path, monkeypatch) -> None:
     vault.root.mkdir(parents=True)
     (vault.root / _SEED_URI).write_text("query: test")
 
-    fake_rows = [{"siret": "12345", "name": "Acme"}]
+    fake_rows = [{"siren": "123456789", "name": "Acme"}]
 
     import anpe.steps.bootstrap_step as mod
     monkeypatch.setattr(mod, "_pipeline_run", lambda path: fake_rows)
@@ -66,5 +66,5 @@ def test_work_writes_listing_jsonl(tmp_path: Path, monkeypatch) -> None:
     out_path = vault.root / _OUTPUT_URI
     assert out_path.exists()
     content = out_path.read_text()
-    assert "12345" in content
+    assert "123456789" in content
     assert any("1 rows" in msg for msg in logs)

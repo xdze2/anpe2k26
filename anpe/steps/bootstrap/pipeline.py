@@ -28,7 +28,7 @@ from anpe.tools.naf import _load_csv_index as _naf_index
 logger = logging.getLogger(__name__)
 
 _OUTPUT_COLUMNS = [
-    "siret", "siren", "nom_complet", "naf_code", "naf_label",
+    "siren", "nom_complet", "naf_code", "naf_label",
     "adresse", "code_postal", "commune",
     "lat", "lon", "distance_km", "matched_city",
     "tranche_effectif", "categorie_entreprise", "date_creation",
@@ -94,7 +94,6 @@ def _row_from_etab(
     naf_label = _naf_index().get(naf_code, "")
     tranche = result.get("tranche_effectif_salarie", "")
     return {
-        "siret": etab.get("siret", ""),
         "siren": result.get("siren", ""),
         "nom_complet": result.get("nom_complet", ""),
         "naf_code": naf_code,
@@ -131,18 +130,18 @@ def run(profile_path: Path, refresh: bool = False) -> list[dict[str, Any]]:
     logger.info("Total raw results across all pairs: %d", len(all_results))
 
     rows: list[dict[str, Any]] = []
-    seen_sirets: set[str] = set()
+    seen_sirens: set[str] = set()
 
     for result in all_results:
+        siren = result.get("siren", "")
+        if not siren or siren in seen_sirens:
+            continue
+
         tranche = result.get("tranche_effectif_salarie", "")
         if not tranche_in_range(tranche, profile.tranche_min, profile.tranche_max):
             continue
 
         for etab in _extract_etablissements(result):
-            siret = etab.get("siret", "")
-            if not siret or siret in seen_sirets:
-                continue
-
             try:
                 etab_lat = float(etab["latitude"])
                 etab_lon = float(etab["longitude"])
@@ -152,9 +151,11 @@ def run(profile_path: Path, refresh: bool = False) -> list[dict[str, Any]]:
             for loc in profile.locations:
                 d = within_radius(etab_lat, etab_lon, loc.lat, loc.lon, loc.radius_km)
                 if d is not None:
-                    seen_sirets.add(siret)
+                    seen_sirens.add(siren)
                     rows.append(_row_from_etab(etab, result, d, loc.city))
                     break
+            if siren in seen_sirens:
+                break
 
     logger.info("Found %d companies", len(rows))
     return rows
