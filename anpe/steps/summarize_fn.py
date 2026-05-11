@@ -131,7 +131,7 @@ def _format_ddg_results(raw_json: str) -> str:
     return "\n".join(lines)
 
 
-async def ddg_summarize(
+def ddg_summarize(
     raw_data: str,
     previous_summary: str,
     company_profile: str = "",
@@ -145,7 +145,7 @@ async def ddg_summarize(
 
     full_prompt = f"## System prompt\n\n{_SYSTEM}\n## User prompt\n\n{user_prompt}"
 
-    output = await mistral_run(SummarizeResult, _MODEL_NAME, _SYSTEM, user_prompt)
+    output = mistral_run(SummarizeResult, _MODEL_NAME, _SYSTEM, user_prompt)
     output.prompt = full_prompt
     output.version = SUMMARIZE_VERSION
     output.model = _MODEL_NAME

@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import json
 from pathlib import Path
-from unittest.mock import AsyncMock
+from unittest.mock import MagicMock
 
 import pytest
 
@@ -85,7 +85,7 @@ def test_work_writes_output(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> 
 
     monkeypatch.setattr(
         "anpe.steps.summarize_ddg_step.ddg_summarize",
-        AsyncMock(return_value=fake_result),
+        MagicMock(return_value=fake_result),
     )
 
     logs: list[str] = []

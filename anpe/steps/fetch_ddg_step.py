@@ -5,6 +5,7 @@ from __future__ import annotations
 import json
 from collections.abc import Iterator
 
+from anpe.clients.ddg import ddg_client
 from anpe.clients.errors import FetchBlockedError, FetchNotFoundError, FetchRetryableError
 from anpe.engine.types import Candidate, FatalError, Log, RetryableError
 from anpe.engine.vault import Vault
@@ -24,11 +25,6 @@ def _ddg_target(siren_raw: dict) -> str:  # type: ignore[type-arg]
 
 class FetchDdgStep:
     name = "fetch_ddg"
-
-    def __init__(self) -> None:
-        from anpe.clients.ddg import DdgClient
-
-        self._fetch = DdgClient(min_interval_s=2.0)
 
     def scan(
         self, vault: Vault, overwrite: bool = False, **_: object
@@ -58,7 +54,7 @@ class FetchDdgStep:
 
         log(f"fetching DDG target={target!r}  node={node_id}")
         try:
-            raw_data = self._fetch(target)
+            raw_data = ddg_client(target)
         except FetchNotFoundError as e:
             log(f"not_found: {e}")
             raise FatalError(f"not_found: {e}") from e

@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-import asyncio
 import json
 from collections.abc import Iterator
 
@@ -60,7 +59,7 @@ class SummarizeDdgStep:
         siren_raw = json.loads(vault.load(siren_uri).decode())
         company_profile = _fmt_company_profile(siren_raw)
 
-        result = asyncio.run(ddg_summarize(raw_data, "", company_profile))
+        result = ddg_summarize(raw_data, "", company_profile)
         log(f"summarize done  status={result.status}  model={result.model}")
 
         payload = {

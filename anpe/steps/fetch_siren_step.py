@@ -5,9 +5,10 @@ from __future__ import annotations
 import json
 from collections.abc import Iterator
 
+from anpe.clients.errors import FetchNotFoundError, FetchRetryableError
+from anpe.clients.siren import siren_client
 from anpe.engine.types import Candidate, FatalError, Log, RetryableError
 from anpe.engine.vault import Vault
-from anpe.clients.errors import FetchNotFoundError, FetchRetryableError
 from anpe.steps.seed_fn import node_id_for
 
 _LISTING_URI = "listing.jsonl"
@@ -15,11 +16,6 @@ _LISTING_URI = "listing.jsonl"
 
 class FetchSirenStep:
     name = "fetch_siren"
-
-    def __init__(self) -> None:
-        from anpe.clients.siren import SirenClient
-
-        self._fetch = SirenClient(min_interval_s=1.0)
 
     def scan(
         self, vault: Vault, overwrite: bool = False, **_: object
@@ -48,7 +44,7 @@ class FetchSirenStep:
 
         log(f"fetching siren={siren!r}  node={node_id}")
         try:
-            raw_data = self._fetch(siren)
+            raw_data = siren_client(siren)
         except FetchNotFoundError as e:
             log(f"not_found: {e}")
             raise FatalError(f"not_found: {e}") from e

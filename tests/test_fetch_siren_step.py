@@ -66,7 +66,7 @@ def test_work_writes_output(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> 
     vault = _make_vault(tmp_path)
     vault.root.mkdir(parents=True)
 
-    monkeypatch.setattr("anpe.clients.siren.SirenClient.__call__", lambda self, siren: '{"siren": "' + siren + '"}')
+    monkeypatch.setattr("anpe.steps.fetch_siren_step.siren_client", lambda siren: '{"siren": "' + siren + '"}')
 
     logs: list[str] = []
     step = FetchSirenStep()

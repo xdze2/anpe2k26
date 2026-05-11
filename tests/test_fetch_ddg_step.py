@@ -105,8 +105,8 @@ def test_work_writes_output(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> 
     vault.root.mkdir(parents=True)
 
     monkeypatch.setattr(
-        "anpe.clients.ddg.DdgClient.__call__",
-        lambda self, query, **kw: '[{"title": "t", "href": "http://x.com", "body": "b"}]',
+        "anpe.steps.fetch_ddg_step.ddg_client",
+        lambda query, **kw: '[{"title": "t", "href": "http://x.com", "body": "b"}]',
     )
 
     logs: list[str] = []
