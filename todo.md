@@ -14,6 +14,7 @@ Each task is independently testable. Work in order — later tasks build on earl
 - **Step 5 done (2026-05-11):** `FetchSirenStep` rewritten (no Queue). `scan` reads `listing.jsonl` directly, yields all candidates with `skip=True` for already-fetched nodes. `work` is sync, uses `SirenClient` with 1 s rate limit. `anpe fetch_siren [--do-max N] [--overwrite]` wired in `cli.py`. `run_step` fixed: eagerly collects all candidates, separates skipped from to-run before applying `do_max` so skipped items never consume work slots. `Step` Protocol added to `types.py` with scan/work contract documented. 5 tests pass.
 - **Steps 6-7 done (2026-05-11):** `FetchDdgStep` and `SummarizeDdgStep` ported. `asyncio.run()` removed — all LLM calls are sync. `anpe fetch_ddg` and `anpe summarize_ddg` wired in `cli.py`. 29 tests pass.
 - **Client refactor (2026-05-11):** `RateLimiter` rewritten as a callable wrapper. All clients are now plain functions wrapped in a module-level `RateLimiter` singleton (`siren_client`, `ddg_client`, `mistral_complete`). Steps have no `__init__`. Mistral retry logic dropped. `llm_eval` and `ddg_summarize` made sync. Deprecated engine test files deleted. 55 tests pass.
+- **Step 10 done (2026-05-11):** `anpe list` and `anpe view <node_id>` implemented in `cli.py`. `list` iterates `nodes/*/` directly, loads eval and review artifacts, renders a Rich table with score (color-coded), reaction, and fit. Options: `--sort-field`, `--nbr`, `--keep-non-relevant`, `--state`. `view` calls the existing `node_view()` from `steps/view.py` and renders markdown via Rich. 70 tests pass.
 
 ---
 
@@ -119,15 +120,7 @@ Wire up `anpe summarize_ddg [--do-max N] [--overwrite]` in `cli2.py`.
 
 ---
 
-## Step 10 — add `list` and `view` commands to `cli.py`
-
-Both are read-only display commands already partially designed in `steps/view.py`.
-Wire them up using `vault.find_latest` to locate artifacts per node.
-
-`anpe list [--keep-non-relevant] [--nbr N] [--sort-field FIELD] [--state STATE]`
-`anpe view <node_id>`
-
-**Test:** run against the real vault and verify no crash.
+## ~~Step 10 — add `list` and `view` commands to `cli.py`~~ ✓ done
 
 ---
 
