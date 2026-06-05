@@ -57,20 +57,18 @@ Node data fields available:
 
 ## Review form
 
-- [ ] **POST endpoint**
+- [x] **POST endpoint**
   - Route: `POST /node/<node_id>/review`
   - Writes `user_vault/nodes/<node_id>/review_<node_id[:8]>.json`
   - Fields: `node_id`, `reaction` (interested/not_interested/more_data), `comment` (optional), `ts` (ISO UTC)
   - Same format as CLI review step (see [docs/specs/12_steps.md](docs/specs/12_steps.md) review section)
 
-- [ ] **Review UI in node detail**
+- [x] **Review UI in node detail**
   - Three buttons: Interested / Not interested / More data
-  - Optional comment `<textarea>`
+  - Optional comment `<textarea>` + "Save comment" button (visible once a reaction is set)
   - `<form method="POST" target="_self">` inside the iframe so it reloads only the detail panel
-  - Show current reaction at top if `review_*.json` already exists
+  - Show current reaction + comment at top if `review_*.json` already exists
 
-- [ ] **Table reaction refresh after review**
-  - After submitting, the iframe reloads the detail page — but the table row reaction cell stays stale
-  - Option A: reload the full parent page on form submit (simple, loses selection)
-  - Option B: use `window.parent.postMessage` from iframe after submit to update just that cell (cleaner)
-  - Decide and implement
+- [x] **Table reaction refresh after review**
+  - After submitting, the iframe fires `window.parent.postMessage({type:'review', nodeId, reaction})` on form submit
+  - Parent listens and updates the row's reaction cell + `data-reaction` attribute in-place (filter still works)

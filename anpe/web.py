@@ -5,9 +5,8 @@ from __future__ import annotations
 import datetime
 import json
 import re
-from pathlib import Path
 
-from flask import Flask, Response, abort
+from flask import Flask, Response, abort, redirect, request, url_for
 from markupsafe import escape
 
 from anpe.engine.vault import Vault
@@ -410,6 +409,19 @@ document.querySelectorAll('th.sortable').forEach((th, _) => {{
 document.querySelectorAll('th.sortable').forEach(th => {{
   if (th.dataset.col === sortCol) th.classList.add('sort-asc');
 }});
+
+// Update table row reaction cell when iframe posts a review result
+window.addEventListener('message', e => {{
+  const d = e.data;
+  if (!d || d.type !== 'review' || !d.nodeId) return;
+  const tr = document.querySelector(`tr[data-node-id="${{d.nodeId}}"]`);
+  if (!tr) return;
+  tr.dataset.reaction = d.reaction || '';
+  const cells = tr.querySelectorAll('td');
+  // reaction is the 4th column (index 3)
+  if (cells[3]) cells[3].textContent = d.reaction || '—';
+  applyFilters();
+}});
 </script>
 </body></html>"""
 
@@ -438,6 +450,33 @@ def profile(filename: str) -> str:
 <style>body {{ font-family: sans-serif; margin: 2rem; background: #fff; }}
 pre {{ white-space: pre-wrap; font-size: 0.9rem; line-height: 1.5; }}</style></head>
 <body><pre>{escape(content)}</pre></body></html>"""
+
+
+_VALID_REACTIONS = {"interested", "not_interested", "more_data"}
+
+
+@app.route("/node/<node_id>/review", methods=["POST"])
+def post_review(node_id: str) -> Response:
+    vault = Vault()
+    node_dir = vault.root / "nodes" / node_id
+    if not node_dir.exists():
+        abort(404)
+
+    reaction = request.form.get("reaction", "")
+    if reaction not in _VALID_REACTIONS:
+        abort(400)
+    comment = request.form.get("comment", "").strip()
+
+    record = {
+        "node_id": node_id,
+        "reaction": reaction,
+        "comment": comment,
+        "ts": datetime.datetime.utcnow().isoformat() + "Z",
+    }
+    out_path = node_dir / f"review_{node_id[:8]}.json"
+    out_path.write_text(json.dumps(record, ensure_ascii=False, indent=2))
+
+    return redirect(url_for("node_detail", node_id=node_id))
 
 
 @app.route("/node/<node_id>")
@@ -471,6 +510,14 @@ def node_detail(node_id: str) -> str:
     if eval_paths:
         try:
             eval_data = json.loads(eval_paths[0].read_bytes())
+        except Exception:
+            pass
+
+    review_data: dict = {}  # type: ignore[type-arg]
+    review_paths = list(node_dir.glob("review_*.json"))
+    if review_paths:
+        try:
+            review_data = json.loads(review_paths[0].read_bytes())
         except Exception:
             pass
 
@@ -538,13 +585,70 @@ def node_detail(node_id: str) -> str:
 
         eval_html = f"<h2>Eval {score_html}{eval_meta}</h2><p>{fit}</p>{db_html}{unc_html}"
 
+    # Review UI
+    current_reaction = review_data.get("reaction", "")
+    current_comment = review_data.get("comment", "")
+    reaction_label = {"interested": "Interested", "not_interested": "Not interested", "more_data": "More data"}
+
+    if current_reaction:
+        reaction_display = f'<div class="reaction-current">Current reaction: <strong>{escape(reaction_label.get(current_reaction, current_reaction))}</strong>'
+        if current_comment:
+            reaction_display += f' — <em>{escape(current_comment)}</em>'
+        reaction_display += "</div>"
+    else:
+        reaction_display = ""
+
+    def _btn(val: str, label: str) -> str:
+        active = ' class="btn-active"' if val == current_reaction else ""
+        return (
+            f'<button type="submit" name="reaction" value="{val}"{active}>{label}</button>'
+        )
+
+    save_btn = ""
+    if current_reaction:
+        save_btn = f'<button type="submit" name="reaction" value="{current_reaction}" class="btn-save">Save comment</button>'
+
+    review_html = f"""<h2>Review</h2>
+{reaction_display}
+<form method="POST" action="/node/{escape(node_id)}/review" target="_self">
+  <div class="review-btns">
+    {_btn("interested", "Interested")}
+    {_btn("not_interested", "Not interested")}
+    {_btn("more_data", "More data")}
+  </div>
+  <textarea name="comment" placeholder="Optional comment…" rows="2">{escape(current_comment)}</textarea>
+  {save_btn}
+</form>"""
+
     return f"""<!doctype html>
 <html><head><meta charset=utf-8><title>{escape(name)}</title>
-<style>{_CSS_DETAIL}</style></head>
+<style>{_CSS_DETAIL}
+.review-btns {{ display: flex; gap: 0.5rem; margin-bottom: 0.5rem; }}
+.review-btns button {{ padding: 0.3rem 0.8rem; border: 1px solid #bbb; border-radius: 3px; cursor: pointer; background: #f5f5f5; font-size: 0.85rem; }}
+.review-btns button:hover {{ background: #e0e8ff; border-color: #88aadd; }}
+.review-btns button.btn-active {{ background: #c8deff; border-color: #4477cc; font-weight: bold; }}
+textarea {{ width: 100%; font-size: 0.85rem; padding: 0.3rem; border: 1px solid #ccc; border-radius: 3px; resize: vertical; }}
+.reaction-current {{ background: #f0f4ff; border-left: 3px solid #4477cc; padding: 0.4rem 0.8rem; border-radius: 0 4px 4px 0; margin-bottom: 0.6rem; font-size: 0.85rem; }}
+.btn-save {{ margin-top: 0.4rem; padding: 0.3rem 0.8rem; border: 1px solid #4477cc; border-radius: 3px; cursor: pointer; background: #e8f0ff; font-size: 0.85rem; color: #4477cc; }}
+</style></head>
 <body>
 <h1>{escape(name)}</h1>
+{review_html}
 {summary_html}
 <dl>{meta_rows}</dl>
 {eval_html}
 {targets_html}
+<script>
+(function() {{
+  var lastReaction = '';
+  document.querySelectorAll('.review-btns button').forEach(function(btn) {{
+    btn.addEventListener('click', function() {{ lastReaction = this.value; }});
+  }});
+  document.querySelector('form').addEventListener('submit', function() {{
+    if (window.parent !== window) {{
+      window.parent.postMessage({{type: 'review', nodeId: '{escape(node_id)}', reaction: lastReaction}}, '*');
+    }}
+  }});
+}})();
+</script>
 </body></html>"""
