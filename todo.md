@@ -19,12 +19,12 @@ Node data fields available:
 
 ## Table view
 
-- [ ] **Add columns: City, NAF, Domaine**
+- [x] **Add columns: City, NAF, Domaine**
   - City and NAF already loaded in `_load_rows()` ([web.py:98](anpe/web.py#L98)) but not rendered in the table ([web.py:145-158](anpe/web.py#L145))
   - Domaine: parse summary first line — strip `**Type:** ... · **Domaine:** X · ...` to extract the Domaine value
   - Add these three columns to the `<thead>` and each `<tr>`
 
-- [ ] **Add matched_city (search batch) column**
+- [x] **Add matched_city (search batch) column**
   - Load `listing.jsonl`, build a `siren → matched_city` dict
   - Join it in `_load_rows()` ([web.py:31](anpe/web.py#L31)) using the `siren` field already in `siren_data`
   - Add as a column in the table — useful for isolating nodes from a new search

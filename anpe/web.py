@@ -28,10 +28,40 @@ _SCORE_COLOR = {
 }
 
 
+def _load_listing_index(vault: Vault) -> dict[str, str]:
+    """Return siren -> matched_city from listing.jsonl."""
+    listing_path = vault.root / "listing.jsonl"
+    if not listing_path.exists():
+        return {}
+    result: dict[str, str] = {}
+    for line in listing_path.read_text().splitlines():
+        line = line.strip()
+        if not line:
+            continue
+        try:
+            rec = json.loads(line)
+            siren = rec.get("siren", "")
+            city = rec.get("matched_city", "")
+            if siren and city:
+                result[siren] = city
+        except Exception:
+            pass
+    return result
+
+
+def _parse_domaine(first_line: str) -> str:
+    m = re.search(r"\*\*Domaine\*\*:\s*([^·\n]+)", first_line)
+    if m:
+        return m.group(1).strip().rstrip("·").strip()
+    return ""
+
+
 def _load_rows(vault: Vault) -> list[dict]:  # type: ignore[type-arg]
     nodes_dir = vault.root / "nodes"
     if not nodes_dir.exists():
         return []
+
+    listing_index = _load_listing_index(vault)
 
     rows = []
     for node_dir in sorted(nodes_dir.iterdir()):
@@ -82,6 +112,12 @@ def _load_rows(vault: Vault) -> list[dict]:  # type: ignore[type-arg]
         summary_text = sum_data.get("summary", "")
         first_line = summary_text.split("\n")[0] if summary_text else ""
         snippet = re.sub(r"\*\*[^*]+\*\*:\s*", "", first_line).strip()
+        domaine = _parse_domaine(first_line)
+
+        siren = siren_data.get("siren", "")
+        city = siege.get("libelle_commune", "") or siege.get("commune", "")
+        naf = siren_data.get("activite_principale", "")
+        matched_city = listing_index.get(siren, "")
 
         rows.append({
             "node_id": node_id,
@@ -93,9 +129,11 @@ def _load_rows(vault: Vault) -> list[dict]:  # type: ignore[type-arg]
             "reaction": review_data.get("reaction", ""),
             "summary": summary_text,
             "dealbreakers": eval_data.get("dealbreakers", []),
-            "siren": siren_data.get("siren", ""),
-            "naf": siren_data.get("activite_principale", ""),
-            "city": siege.get("libelle_commune", "") or siege.get("commune", ""),
+            "siren": siren,
+            "naf": naf,
+            "city": city,
+            "domaine": domaine,
+            "matched_city": matched_city,
         })
 
     return rows
@@ -149,13 +187,22 @@ def index() -> str:
         score_cell = f'<span class="score" style="color:{color}">{escape(score)}</span>' if score else '<span class="dim">—</span>'
         reaction = escape(r["reaction"]) or ""
         name = escape(r["name"] or r["node_id"])
-        size = f' <span class="dim">{escape(r["size"])}</span>' if r["size"] else ""
+        size = escape(r["size"]) or '<span class="dim">—</span>'
+        city = escape(r["city"]) or '<span class="dim">—</span>'
+        naf = escape(r["naf"]) or '<span class="dim">—</span>'
+        domaine = escape(r["domaine"]) or '<span class="dim">—</span>'
+        matched_city = escape(r["matched_city"]) or '<span class="dim">—</span>'
         node_url = f"/node/{escape(r['node_id'])}"
         tbody += (
             f'<tr onclick="show(\'{node_url}\', this)">'
-            f"<td>{name}{size}</td>"
+            f"<td>{name}</td>"
+            f"<td>{size}</td>"
             f"<td>{score_cell}</td>"
             f"<td>{reaction}</td>"
+            f"<td>{city}</td>"
+            f"<td>{naf}</td>"
+            f"<td>{domaine}</td>"
+            f"<td>{matched_city}</td>"
             f"</tr>\n"
         )
 
@@ -167,7 +214,7 @@ def index() -> str:
   <div id="left">
     <h1>Nodes ({len(rows)})</h1>
     <table>
-    <thead><tr><th>Company</th><th>Score</th><th>Reaction</th></tr></thead>
+    <thead><tr><th>Company</th><th>Size</th><th>Score</th><th>Reaction</th><th>City</th><th>NAF</th><th>Domaine</th><th>Batch</th></tr></thead>
     <tbody>{tbody}</tbody>
     </table>
   </div>
