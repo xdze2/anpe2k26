@@ -174,6 +174,8 @@ h1 { font-size: 1.2rem; margin: 0 0 0.5rem; }
 #filters { display: flex; flex-wrap: wrap; gap: 0.4rem; margin-bottom: 0.6rem; }
 #filters input, #filters select { font-size: 0.8rem; padding: 0.25rem 0.4rem; border: 1px solid #ccc; border-radius: 3px; }
 #filters input { width: 10rem; }
+#filters button { font-size: 0.8rem; padding: 0.25rem 0.5rem; border: 1px solid #aaa; border-radius: 3px; background: #f0f0f0; cursor: pointer; }
+#filters button:hover { background: #e0e0e0; }
 table { border-collapse: collapse; width: 100%; background: #fff; }
 th, td { padding: 0.4rem 0.6rem; text-align: left; border-bottom: 1px solid #e0e0e0; font-size: 0.85rem; }
 th { background: #f0f0f0; user-select: none; white-space: nowrap; }
@@ -310,6 +312,7 @@ def index() -> str:
       <select id="f-naf" onchange="applyFilters()">
         <option value="">All NAF</option>{naf_opts}
       </select>
+      <button id="btn-clear" onclick="clearFilters()" style="display:none">Clear filters</button>
     </div>
     <table id="main-table">
     <thead><tr>
@@ -348,6 +351,8 @@ function applyFilters() {{
   const batch = document.getElementById('f-batch').value;
   const categorie = document.getElementById('f-categorie').value;
   const naf = document.getElementById('f-naf').value;
+  const active = name || score || reaction || batch || categorie || naf;
+  document.getElementById('btn-clear').style.display = active ? '' : 'none';
   let visible = 0;
   document.querySelectorAll('#tbody tr').forEach(tr => {{
     const ok = (
@@ -362,6 +367,16 @@ function applyFilters() {{
     if (ok) visible++;
   }});
   document.getElementById('count').textContent = visible;
+}}
+
+function clearFilters() {{
+  document.getElementById('f-name').value = '';
+  document.getElementById('f-score').value = '';
+  document.getElementById('f-reaction').value = '';
+  document.getElementById('f-batch').value = '';
+  document.getElementById('f-categorie').value = '';
+  document.getElementById('f-naf').value = '';
+  applyFilters();
 }}
 
 function sortBy(col) {{
