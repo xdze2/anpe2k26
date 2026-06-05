@@ -1,7 +1,27 @@
 # ANPE-2k26
 
 Personal job-search assistant for discovering companies you don't know exist yet.
-Built with [pydantic-ai](https://ai.pydantic.dev/) and [Mistral AI](https://mistral.ai/).
+
+Built with Mistral AI, SIRENE dataset and Claude.
+
+## How it works
+
+```mermaid
+flowchart TB
+    BOOTSTRAP["👤 Bootstrap"]
+    ENRICH["🌐 Fetch and 🤖 Summarize"]
+    REVIEW["👤 User review"]
+    EVAL["🤖  Compute rank"]
+
+    BOOTSTRAP -- seeds --> ENRICH
+    ENRICH -- sample --> REVIEW
+    REVIEW -- update user preference --> EVAL
+    ENRICH -- all --> EVAL
+    EVAL -- pick best candidates --> ENRICH
+```
+
+Web app view:
+![Screenshot](images/screenshot_001.png)
 
 ## Quickstart
 
@@ -16,35 +36,38 @@ cp .env.example .env   # then add your MISTRAL_API_KEY
 
 ## Usage
 
+**1. Configure your search** — edit `user_vault/seed_query.yaml` to set NAF codes, locations, and company size range.
+
+**2. Bootstrap** — fetch matching companies from the SIRENE dataset:
+
 ```bash
-uv run anpe        # interactive chat
+uv run anpe bootstrap
+```
+
+**3. Run the enrichment loop** — fetch web pages, summarize, and rank candidates:
+
+```bash
+source loop.sh
+```
+
+**4. Review results** — open the web app to browse and react to companies:
+
+```bash
+uv run anpe web
+```
+
+**5. Refine preferences** — edit `user_vault/user_preference.md` to update what you're looking for, then re-run `loop.sh` to re-rank.
+
+User data (companies, profile, logs) lives in `user_vault/` — gitignored.
+
+## Dev
+
+```bash
 uv run pytest      # run tests
 uv run ruff check  # lint
 uv run mypy anpe/  # type check
 ```
 
-## Project structure
-
-```
-anpe/
-├── cli.py            # click CLI entry point
-├── config.py         # pydantic-settings (.env)
-├── profile.py        # user search profile read/write
-├── clients/          # external API wrappers (SIREN, DDG)
-├── engine/           # orchestration: queue, runner, vault, rate gate
-├── steps/            # ANPE business logic: step classes (*_step.py)
-│   │                 # and pure domain functions (*_fn.py)
-│   └── bootstrap/    # company listing pipeline
-└── tools/            # NAF codes, geocoding
-tests/
-docs/
-├── specs/            # vision, design, usage examples
-└── dev_log/          # session notes and decisions
-```
-
-User data (companies, profile, logs) lives in `user_data/` — gitignored.
-
-## More
 
 - [Vision and goals](docs/specs/10_vision.md)
 - [Full spec index](docs/specs/README.md)
