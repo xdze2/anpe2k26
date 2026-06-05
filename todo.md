@@ -29,14 +29,16 @@ Node data fields available:
   - Join it in `_load_rows()` ([web.py:31](anpe/web.py#L31)) using the `siren` field already in `siren_data`
   - Add as a column in the table — useful for isolating nodes from a new search
 
-- [ ] **Add filter bar**
-  - Dropdowns for: `score`, `reaction`, `matched_city`
+- [x] **Add filter bar**
+  - Dropdowns for: `score`, `reaction`, `matched_city`, `categorie_entreprise`
   - Text search on company name
   - Client-side JS only (no round-trip) — hide/show `<tr>` rows
 
-- [ ] **Sortable column headers**
+- [x] **Sortable column headers**
   - Click a `<th>` to sort asc/desc by that column
   - Client-side JS; keep default sort = score then node_id
+
+- [x] **Add Catégorie column** (PME/ETI/GE) with filter dropdown
 
 ---
 

@@ -19,6 +19,7 @@ _HEADCOUNT_BANDS: dict[str, str] = {
     "31": "200-249", "32": "250-499", "41": "500-999",
     "42": "1000-1999", "51": "2000-4999", "52": "5000-9999", "53": "10000+",
 }
+_HEADCOUNT_RANK: dict[str, int] = {k: i for i, k in enumerate(_HEADCOUNT_BANDS)}
 
 _SCORE_COLOR = {
     "good": "#2d9e2d",
@@ -108,6 +109,7 @@ def _load_rows(vault: Vault) -> list[dict]:  # type: ignore[type-arg]
         name = siege.get("nom_commercial") or nom_legal or node_id
         size_code = siren_data.get("tranche_effectif_salarie", "")
         size = _HEADCOUNT_BANDS.get(size_code, size_code) if size_code else ""
+        size_rank = _HEADCOUNT_RANK.get(size_code, 99)
 
         summary_text = sum_data.get("summary", "")
         first_line = summary_text.split("\n")[0] if summary_text else ""
@@ -118,11 +120,13 @@ def _load_rows(vault: Vault) -> list[dict]:  # type: ignore[type-arg]
         city = siege.get("libelle_commune", "") or siege.get("commune", "")
         naf = siren_data.get("activite_principale", "")
         matched_city = listing_index.get(siren, "")
+        categorie = siren_data.get("categorie_entreprise", "")
 
         rows.append({
             "node_id": node_id,
             "name": name,
             "size": size,
+            "size_rank": size_rank,
             "snippet": snippet,
             "score": eval_data.get("score", ""),
             "fit": eval_data.get("fit", ""),
@@ -134,6 +138,7 @@ def _load_rows(vault: Vault) -> list[dict]:  # type: ignore[type-arg]
             "city": city,
             "domaine": domaine,
             "matched_city": matched_city,
+            "categorie": categorie,
         })
 
     return rows
@@ -146,13 +151,21 @@ html, body { height: 100%; margin: 0; font-family: sans-serif; background: #f9f9
 #left { width: 55%; overflow-y: auto; border-right: 1px solid #ddd; padding: 1rem; }
 #right { flex: 1; }
 #right iframe { width: 100%; height: 100%; border: none; }
-h1 { font-size: 1.2rem; margin: 0 0 0.75rem; }
+h1 { font-size: 1.2rem; margin: 0 0 0.5rem; }
+#filters { display: flex; flex-wrap: wrap; gap: 0.4rem; margin-bottom: 0.6rem; }
+#filters input, #filters select { font-size: 0.8rem; padding: 0.25rem 0.4rem; border: 1px solid #ccc; border-radius: 3px; }
+#filters input { width: 10rem; }
 table { border-collapse: collapse; width: 100%; background: #fff; }
 th, td { padding: 0.4rem 0.6rem; text-align: left; border-bottom: 1px solid #e0e0e0; font-size: 0.85rem; }
-th { background: #f0f0f0; }
+th { background: #f0f0f0; user-select: none; white-space: nowrap; }
+th.sortable { cursor: pointer; }
+th.sortable:hover { background: #e4e4e4; }
+th.sort-asc::after { content: ' ↑'; }
+th.sort-desc::after { content: ' ↓'; }
 tr { cursor: pointer; }
 tr:hover { background: #eef4ff; }
 tr.active { background: #ddeeff; }
+tr.hidden { display: none; }
 .score { font-weight: bold; }
 .dim { color: #888; }
 """
@@ -180,29 +193,64 @@ def index() -> str:
         r["node_id"],
     ))
 
+    # Collect distinct values for filter dropdowns
+    all_scores = sorted({r["score"] for r in rows if r["score"]})
+    all_reactions = sorted({r["reaction"] for r in rows if r["reaction"]})
+    all_batches = sorted({r["matched_city"] for r in rows if r["matched_city"]})
+    all_categories = sorted({r["categorie"] for r in rows if r["categorie"]})
+
+    def opt(val: str) -> str:
+        return f'<option value="{escape(val)}">{escape(val)}</option>'
+
+    score_opts = "".join(opt(v) for v in all_scores)
+    reaction_opts = "".join(opt(v) for v in all_reactions)
+    batch_opts = "".join(opt(v) for v in all_batches)
+    categorie_opts = "".join(opt(v) for v in all_categories)
+
+    # score rank used both for default sort and as a data attribute
+    _SCORE_RANK = {"good": 0, "maybe": 1, "enrich": 2, "discard": 3}
+
     tbody = ""
     for r in rows:
         score = r["score"]
         color = _SCORE_COLOR.get(score, "#888")
         score_cell = f'<span class="score" style="color:{color}">{escape(score)}</span>' if score else '<span class="dim">—</span>'
-        reaction = escape(r["reaction"]) or ""
+        reaction_val = r["reaction"]
+        reaction_disp = escape(reaction_val) if reaction_val else '<span class="dim">—</span>'
         name = escape(r["name"] or r["node_id"])
         size = escape(r["size"]) or '<span class="dim">—</span>'
         city = escape(r["city"]) or '<span class="dim">—</span>'
         naf = escape(r["naf"]) or '<span class="dim">—</span>'
         domaine = escape(r["domaine"]) or '<span class="dim">—</span>'
-        matched_city = escape(r["matched_city"]) or '<span class="dim">—</span>'
+        matched_city_val = r["matched_city"]
+        matched_city = escape(matched_city_val) or '<span class="dim">—</span>'
+        categorie_val = r["categorie"]
+        categorie = escape(categorie_val) or '<span class="dim">—</span>'
         node_url = f"/node/{escape(r['node_id'])}"
+        score_rank = _SCORE_RANK.get(score, 9)
+        name_lower = (r["name"] or r["node_id"]).lower()
         tbody += (
-            f'<tr onclick="show(\'{node_url}\', this)">'
+            f'<tr onclick="show(\'{node_url}\', this)"'
+            f' data-score="{escape(score)}"'
+            f' data-score-rank="{score_rank}"'
+            f' data-size-rank="{r["size_rank"]}"'
+            f' data-reaction="{escape(reaction_val)}"'
+            f' data-batch="{escape(matched_city_val)}"'
+            f' data-name="{escape(name_lower)}"'
+            f' data-city="{escape((r["city"] or "").lower())}"'
+            f' data-domaine="{escape((r["domaine"] or "").lower())}"'
+            f' data-categorie="{escape(categorie_val)}"'
+            f' data-node-id="{escape(r["node_id"])}"'
+            f'>'
             f"<td>{name}</td>"
             f"<td>{size}</td>"
             f"<td>{score_cell}</td>"
-            f"<td>{reaction}</td>"
+            f"<td>{reaction_disp}</td>"
             f"<td>{city}</td>"
             f"<td>{naf}</td>"
             f"<td>{domaine}</td>"
             f"<td>{matched_city}</td>"
+            f"<td>{categorie}</td>"
             f"</tr>\n"
         )
 
@@ -212,20 +260,118 @@ def index() -> str:
 <body>
 <div id="layout">
   <div id="left">
-    <h1>Nodes ({len(rows)})</h1>
-    <table>
-    <thead><tr><th>Company</th><th>Size</th><th>Score</th><th>Reaction</th><th>City</th><th>NAF</th><th>Domaine</th><th>Batch</th></tr></thead>
-    <tbody>{tbody}</tbody>
+    <h1>Nodes (<span id="count">{len(rows)}</span>)</h1>
+    <div id="filters">
+      <input id="f-name" type="search" placeholder="Search name…" oninput="applyFilters()">
+      <select id="f-score" onchange="applyFilters()">
+        <option value="">All scores</option>{score_opts}
+      </select>
+      <select id="f-reaction" onchange="applyFilters()">
+        <option value="">All reactions</option>{reaction_opts}
+      </select>
+      <select id="f-batch" onchange="applyFilters()">
+        <option value="">All batches</option>{batch_opts}
+      </select>
+      <select id="f-categorie" onchange="applyFilters()">
+        <option value="">All catégories</option>{categorie_opts}
+      </select>
+    </div>
+    <table id="main-table">
+    <thead><tr>
+      <th class="sortable" data-col="name">Company</th>
+      <th class="sortable" data-col="size-rank">Size</th>
+      <th class="sortable" data-col="score-rank">Score</th>
+      <th class="sortable" data-col="reaction">Reaction</th>
+      <th class="sortable" data-col="city">City</th>
+      <th>NAF</th>
+      <th class="sortable" data-col="domaine">Domaine</th>
+      <th class="sortable" data-col="batch">Batch</th>
+      <th class="sortable" data-col="categorie">Catégorie</th>
+    </tr></thead>
+    <tbody id="tbody">{tbody}</tbody>
     </table>
   </div>
   <div id="right"><iframe name="detail" src="about:blank"></iframe></div>
 </div>
 <script>
+// Column index -> data attribute mapping
+const COL_DATA = ['name', null, 'score-rank', 'reaction', null, null, null, 'batch'];
+
+let sortCol = 'score-rank';
+let sortDir = 1; // 1=asc, -1=desc
+
 function show(url, row) {{
   document.querySelectorAll('tr.active').forEach(r => r.classList.remove('active'));
   row.classList.add('active');
   document.querySelector('iframe').src = url;
 }}
+
+function applyFilters() {{
+  const name = document.getElementById('f-name').value.toLowerCase();
+  const score = document.getElementById('f-score').value;
+  const reaction = document.getElementById('f-reaction').value;
+  const batch = document.getElementById('f-batch').value;
+  const categorie = document.getElementById('f-categorie').value;
+  let visible = 0;
+  document.querySelectorAll('#tbody tr').forEach(tr => {{
+    const ok = (
+      (!name || tr.dataset.name.includes(name)) &&
+      (!score || tr.dataset.score === score) &&
+      (!reaction || tr.dataset.reaction === reaction) &&
+      (!batch || tr.dataset.batch === batch) &&
+      (!categorie || tr.dataset.categorie === categorie)
+    );
+    tr.classList.toggle('hidden', !ok);
+    if (ok) visible++;
+  }});
+  document.getElementById('count').textContent = visible;
+}}
+
+function sortBy(col) {{
+  if (sortCol === col) {{
+    sortDir *= -1;
+  }} else {{
+    sortCol = col;
+    sortDir = 1;
+  }}
+  const tbody = document.getElementById('tbody');
+  const rows = Array.from(tbody.querySelectorAll('tr'));
+  const NUMERIC_COLS = new Set(['score-rank', 'size-rank']);
+  // dataset API converts hyphenated names to camelCase
+  const toCamel = s => s.replace(/-([a-z])/g, (_, c) => c.toUpperCase());
+  const key = toCamel(sortCol);
+  rows.sort((a, b) => {{
+    let va = a.dataset[key] || '';
+    let vb = b.dataset[key] || '';
+    if (NUMERIC_COLS.has(sortCol)) {{
+      const na = parseInt(va, 10); const nb = parseInt(vb, 10);
+      const ra = isNaN(na) ? 99 : na; const rb = isNaN(nb) ? 99 : nb;
+      if (ra !== rb) return (ra - rb) * sortDir;
+    }} else {{
+      const cmp = va.localeCompare(vb);
+      if (cmp !== 0) return cmp * sortDir;
+    }}
+    return (a.dataset.nodeId || '').localeCompare(b.dataset.nodeId || '');
+  }});
+  rows.forEach(r => tbody.appendChild(r));
+  // update header indicators
+  document.querySelectorAll('th.sortable').forEach(th => {{
+    th.classList.remove('sort-asc', 'sort-desc');
+    if (th.dataset.col === sortCol) {{
+      th.classList.add(sortDir === 1 ? 'sort-asc' : 'sort-desc');
+    }}
+  }});
+}}
+
+// Wire up sortable headers (use col index to pick data attribute)
+document.querySelectorAll('th.sortable').forEach((th, _) => {{
+  th.addEventListener('click', () => sortBy(th.dataset.col));
+}});
+
+// Initial sort indicator
+document.querySelectorAll('th.sortable').forEach(th => {{
+  if (th.dataset.col === sortCol) th.classList.add('sort-asc');
+}});
 </script>
 </body></html>"""
 
