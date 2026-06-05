@@ -44,13 +44,14 @@ Node data fields available:
 
 ## Node detail
 
-- [ ] **Raw DDG link**
+- [x] **Raw DDG link**
   - Add route `GET /raw/<node_id>/ddg` returning `fetch_ddg_*.json` as JSON
-  - Link it from the detail page ([web.py:186](anpe/web.py#L186)) near the summary section
+  - Link it from the detail page near the summary section
 
-- [ ] **Profile link**
+- [x] **Profile link**
   - `profile_uri` is already in `eval_*.json` — read it and display filename + a link
-  - Add route `GET /profile` (or `/profile/<filename>`) that serves the markdown file as `<pre>` or rendered HTML
+  - Add route `GET /profile/<filename>` that serves the markdown file as `<pre>`
+  - Eval heading also shows date (file mtime) and profile link
 
 ---
 

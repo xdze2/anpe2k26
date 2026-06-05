@@ -2,11 +2,12 @@
 
 from __future__ import annotations
 
+import datetime
 import json
 import re
 from pathlib import Path
 
-from flask import Flask, abort
+from flask import Flask, Response, abort
 from markupsafe import escape
 
 from anpe.engine.vault import Vault
@@ -53,6 +54,18 @@ def _load_listing_index(vault: Vault) -> tuple[dict[str, str], dict[str, str]]:
         except Exception:
             pass
     return cities, naf_labels
+
+
+def _parse_summary_header(first_line: str) -> str:
+    """Render the bold-tag header line as styled HTML chips (Type / Domaine / Marché)."""
+    tags = re.findall(r"\*\*([^*]+)\*\*:\s*([^·\n]+)", first_line)
+    if not tags:
+        return f"<div class='summary-header'>{escape(first_line)}</div>"
+    chips = "".join(
+        f'<span class="tag"><span class="tag-label">{escape(k)}</span>: {escape(v.strip().rstrip("·").strip())}</span>'
+        for k, v in tags
+    )
+    return f"<div class='summary-header'>{chips}</div>"
 
 
 def _parse_domaine(first_line: str) -> str:
@@ -187,6 +200,12 @@ pre { white-space: pre-wrap; background: #f4f4f4; padding: 1rem; border-radius: 
 dl { display: grid; grid-template-columns: max-content 1fr; gap: 0.2rem 1rem; font-size: 0.85rem; }
 dt { font-weight: bold; color: #555; }
 ul { margin: 0.3rem 0; padding-left: 1.2rem; }
+.summary-header { background: #f0f4ff; border-left: 3px solid #4477cc; padding: 0.5rem 0.8rem; border-radius: 0 4px 4px 0; margin-bottom: 0.8rem; font-size: 0.9rem; }
+.summary-header .tag { display: inline-block; margin-right: 1rem; }
+.summary-header .tag-label { font-weight: bold; color: #4477cc; }
+.summary-body { font-size: 0.9rem; line-height: 1.5; color: #333; margin-bottom: 0.5rem; }
+.raw-link { font-size: 0.8rem; color: #888; }
+.raw-link a { color: #888; }
 """
 
 
@@ -395,6 +414,32 @@ document.querySelectorAll('th.sortable').forEach(th => {{
 </body></html>"""
 
 
+@app.route("/raw/<node_id>/ddg")
+def raw_ddg(node_id: str) -> Response:
+    vault = Vault()
+    node_dir = vault.root / "nodes" / node_id
+    if not node_dir.exists():
+        abort(404)
+    paths = list(node_dir.glob("fetch_ddg_*.json"))
+    if not paths:
+        abort(404)
+    return Response(paths[0].read_bytes(), mimetype="application/json")
+
+
+@app.route("/profile/<path:filename>")
+def profile(filename: str) -> str:
+    vault = Vault()
+    path = vault.root / filename
+    if not path.exists() or not path.is_file():
+        abort(404)
+    content = path.read_text()
+    return f"""<!doctype html>
+<html><head><meta charset=utf-8><title>{escape(filename)}</title>
+<style>body {{ font-family: sans-serif; margin: 2rem; background: #fff; }}
+pre {{ white-space: pre-wrap; font-size: 0.9rem; line-height: 1.5; }}</style></head>
+<body><pre>{escape(content)}</pre></body></html>"""
+
+
 @app.route("/node/<node_id>")
 def node_detail(node_id: str) -> str:
     vault = Vault()
@@ -460,10 +505,16 @@ def node_detail(node_id: str) -> str:
         )
         targets_html = f"<h2>Next targets</h2><ul>{items}</ul>"
 
-    summary_html = ""
     summary_text = sum_data.get("summary", "")
+    summary_html = ""
     if summary_text:
-        summary_html = f"<h2>Summary</h2><pre>{escape(summary_text)}</pre>"
+        lines = summary_text.split("\n", 1)
+        header_html = _parse_summary_header(lines[0]) if lines[0].strip() else ""
+        body_text = lines[1].strip() if len(lines) > 1 else ""
+        body_html = f"<p class='summary-body'>{escape(body_text)}</p>" if body_text else ""
+        has_ddg = bool(list(node_dir.glob("fetch_ddg_*.json")))
+        raw_link = f' <span class="raw-link"><a href="/raw/{escape(node_id)}/ddg" target="_blank">raw DDG</a></span>' if has_ddg else ""
+        summary_html = f"<h2>Summary{raw_link}</h2>{header_html}{body_html}"
 
     eval_html = ""
     if eval_data:
@@ -475,15 +526,25 @@ def node_detail(node_id: str) -> str:
             db_html = f"<p><strong>Dealbreakers:</strong> <ul>{items}</ul></p>"
         uncertainty = eval_data.get("uncertainty", "")
         unc_html = f"<p><em>Uncertainty: {escape(uncertainty)}</em></p>" if uncertainty else ""
-        eval_html = f"<h2>Eval {score_html}</h2><p>{fit}</p>{db_html}{unc_html}"
+
+        meta_parts = []
+        if eval_paths:
+            mtime = datetime.datetime.fromtimestamp(eval_paths[0].stat().st_mtime)
+            meta_parts.append(mtime.strftime("%Y-%m-%d"))
+        profile_uri = eval_data.get("profile_uri", "")
+        if profile_uri:
+            meta_parts.append(f'<a href="/profile/{escape(profile_uri)}" target="_blank">{escape(profile_uri)}</a>')
+        eval_meta = f' <span class="raw-link">{" · ".join(meta_parts)}</span>' if meta_parts else ""
+
+        eval_html = f"<h2>Eval {score_html}{eval_meta}</h2><p>{fit}</p>{db_html}{unc_html}"
 
     return f"""<!doctype html>
 <html><head><meta charset=utf-8><title>{escape(name)}</title>
 <style>{_CSS_DETAIL}</style></head>
 <body>
 <h1>{escape(name)}</h1>
+{summary_html}
 <dl>{meta_rows}</dl>
 {eval_html}
 {targets_html}
-{summary_html}
 </body></html>"""
