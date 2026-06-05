@@ -29,12 +29,13 @@ _SCORE_COLOR = {
 }
 
 
-def _load_listing_index(vault: Vault) -> dict[str, str]:
-    """Return siren -> matched_city from listing.jsonl."""
+def _load_listing_index(vault: Vault) -> tuple[dict[str, str], dict[str, str]]:
+    """Return (siren -> matched_city, naf_code -> naf_label) from listing.jsonl."""
     listing_path = vault.root / "listing.jsonl"
     if not listing_path.exists():
-        return {}
-    result: dict[str, str] = {}
+        return {}, {}
+    cities: dict[str, str] = {}
+    naf_labels: dict[str, str] = {}
     for line in listing_path.read_text().splitlines():
         line = line.strip()
         if not line:
@@ -44,10 +45,14 @@ def _load_listing_index(vault: Vault) -> dict[str, str]:
             siren = rec.get("siren", "")
             city = rec.get("matched_city", "")
             if siren and city:
-                result[siren] = city
+                cities[siren] = city
+            code = rec.get("naf_code", "")
+            label = rec.get("naf_label", "")
+            if code and label:
+                naf_labels[code] = label
         except Exception:
             pass
-    return result
+    return cities, naf_labels
 
 
 def _parse_domaine(first_line: str) -> str:
@@ -62,7 +67,7 @@ def _load_rows(vault: Vault) -> list[dict]:  # type: ignore[type-arg]
     if not nodes_dir.exists():
         return []
 
-    listing_index = _load_listing_index(vault)
+    listing_index, naf_label_index = _load_listing_index(vault)
 
     rows = []
     for node_dir in sorted(nodes_dir.iterdir()):
@@ -119,6 +124,7 @@ def _load_rows(vault: Vault) -> list[dict]:  # type: ignore[type-arg]
         siren = siren_data.get("siren", "")
         city = siege.get("libelle_commune", "") or siege.get("commune", "")
         naf = siren_data.get("activite_principale", "")
+        naf_label = naf_label_index.get(naf, "")
         matched_city = listing_index.get(siren, "")
         categorie = siren_data.get("categorie_entreprise", "")
 
@@ -135,6 +141,7 @@ def _load_rows(vault: Vault) -> list[dict]:  # type: ignore[type-arg]
             "dealbreakers": eval_data.get("dealbreakers", []),
             "siren": siren,
             "naf": naf,
+            "naf_label": naf_label,
             "city": city,
             "domaine": domaine,
             "matched_city": matched_city,
@@ -198,6 +205,7 @@ def index() -> str:
     all_reactions = sorted({r["reaction"] for r in rows if r["reaction"]})
     all_batches = sorted({r["matched_city"] for r in rows if r["matched_city"]})
     all_categories = sorted({r["categorie"] for r in rows if r["categorie"]})
+    all_nafs = sorted({(r["naf"], r["naf_label"]) for r in rows if r["naf"]})
 
     def opt(val: str) -> str:
         return f'<option value="{escape(val)}">{escape(val)}</option>'
@@ -206,6 +214,10 @@ def index() -> str:
     reaction_opts = "".join(opt(v) for v in all_reactions)
     batch_opts = "".join(opt(v) for v in all_batches)
     categorie_opts = "".join(opt(v) for v in all_categories)
+    naf_opts = "".join(
+        f'<option value="{escape(code)}">{escape(code)}{" — " + escape(label) if label else ""}</option>'
+        for code, label in all_nafs
+    )
 
     # score rank used both for default sort and as a data attribute
     _SCORE_RANK = {"good": 0, "maybe": 1, "enrich": 2, "discard": 3}
@@ -229,6 +241,7 @@ def index() -> str:
         node_url = f"/node/{escape(r['node_id'])}"
         score_rank = _SCORE_RANK.get(score, 9)
         name_lower = (r["name"] or r["node_id"]).lower()
+        naf_val = r["naf"]
         tbody += (
             f'<tr onclick="show(\'{node_url}\', this)"'
             f' data-score="{escape(score)}"'
@@ -240,6 +253,7 @@ def index() -> str:
             f' data-city="{escape((r["city"] or "").lower())}"'
             f' data-domaine="{escape((r["domaine"] or "").lower())}"'
             f' data-categorie="{escape(categorie_val)}"'
+            f' data-naf="{escape(naf_val)}"'
             f' data-node-id="{escape(r["node_id"])}"'
             f'>'
             f"<td>{name}</td>"
@@ -274,6 +288,9 @@ def index() -> str:
       </select>
       <select id="f-categorie" onchange="applyFilters()">
         <option value="">All catégories</option>{categorie_opts}
+      </select>
+      <select id="f-naf" onchange="applyFilters()">
+        <option value="">All NAF</option>{naf_opts}
       </select>
     </div>
     <table id="main-table">
@@ -312,6 +329,7 @@ function applyFilters() {{
   const reaction = document.getElementById('f-reaction').value;
   const batch = document.getElementById('f-batch').value;
   const categorie = document.getElementById('f-categorie').value;
+  const naf = document.getElementById('f-naf').value;
   let visible = 0;
   document.querySelectorAll('#tbody tr').forEach(tr => {{
     const ok = (
@@ -319,7 +337,8 @@ function applyFilters() {{
       (!score || tr.dataset.score === score) &&
       (!reaction || tr.dataset.reaction === reaction) &&
       (!batch || tr.dataset.batch === batch) &&
-      (!categorie || tr.dataset.categorie === categorie)
+      (!categorie || tr.dataset.categorie === categorie) &&
+      (!naf || tr.dataset.naf === naf)
     );
     tr.classList.toggle('hidden', !ok);
     if (ok) visible++;
